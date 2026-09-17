@@ -36,6 +36,28 @@ intents.message_content = True
 # command_prefix="!" sesuai rancangan GDD kita (semua command diawali tanda seru).
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Daftar cog yang akan di-load otomatis saat bot start.
+# Format: "cogs.<nama_file_tanpa_.py>"
+# Cukup tambahkan nama file di list ini setiap kali kita bikin cog baru,
+# tidak perlu ubah logic loading-nya.
+INITIAL_EXTENSIONS = [
+    "cogs.profile",
+]
+
+
+@bot.event
+async def setup_hook():
+    """
+    Dipanggil otomatis oleh discord.py SEBELUM bot login ke Discord.
+    Tempat yang tepat untuk load semua cogs/extensions.
+    """
+    for extension in INITIAL_EXTENSIONS:
+        try:
+            await bot.load_extension(extension)
+            print(f"[COG] Berhasil load: {extension}")
+        except Exception as e:
+            print(f"[COG ERROR] Gagal load {extension}: {e}")
+
 
 @bot.event
 async def on_ready():
