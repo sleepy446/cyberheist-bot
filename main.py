@@ -12,6 +12,8 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import database
+
 # --- Load token dari file .env ---
 # Kita simpan token di .env (bukan hardcode di kode) demi keamanan.
 # .env sudah masuk .gitignore, jadi tidak akan ke-push ke GitHub.
@@ -58,4 +60,6 @@ async def ping(ctx: commands.Context):
 
 # --- Jalankan Bot ---
 if __name__ == "__main__":
+    # Pastikan database & tabel 'players' sudah siap SEBELUM bot online.
+    database.init_db()
     bot.run(TOKEN)
