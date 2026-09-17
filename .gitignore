@@ -1,0 +1,15 @@
+# Virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+
+# Database (biasanya kita ga commit data player asli)
+data/*.sqlite3
+data/*.db
+
+# OS/editor junk
+.DS_Store
+*.swp
