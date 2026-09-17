@@ -21,17 +21,12 @@ class ShopCog(commands.Cog):
     @commands.command(name="shop", aliases=["rigs", "store"])
     async def shop(self, ctx: commands.Context):
         """
-        Menampilkan daftar hardware/rig yang tersedia untuk dibeli
-        beserta saldo Bytes yang dimiliki player saat ini.
+        Menampilkan daftar hardware/rig yang tersedia untuk dibeli.
         Pemakaian di Discord: !shop
         """
-        # Ambil data player untuk melihat saldo Bytes-nya
-        player = database.get_player(ctx.author.id)
-        current_bytes = player["bytes"]
-
         embed = discord.Embed(
             title="🛒 Black Market Hardware Shop",
-            description=f"Gunakan Bytes hasil hacking-mu untuk upgrade rig!\n💰 **Saldo Kamu:** `{current_bytes:,} Bytes`",
+            description="Gunakan Bytes hasil hacking-mu untuk upgrade rig dan otomatisasi penambangan!",
             color=discord.Color.blue()
         )
 
