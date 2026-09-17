@@ -1,114 +1,90 @@
 """
-CyberHeist Bot - Shop & Rig Cog
-=================================
-Cog ini menangani sistem ekonomi lanjutan: melihat daftar hardware
-di toko (!shop) dan membeli upgrade rig (!rig) untuk passive income.
+CyberHeist Bot - Entry Point
+==============================
+Ini adalah file utama (entry point) yang menjalankan bot Discord.
+Versi ini masih tahap dasar: hanya untuk memastikan bot bisa online
+dan merespons command sederhana (!ping) sebelum kita bangun sistem
+database & command inti (hack, rig, clean, dll) di tahap berikutnya.
 """
 
+import os
 import discord
 from discord.ext import commands
+from dotenv import load_dotenv
 
 import database
-import config
+
+# --- Load token dari file .env ---
+# Kita simpan token di .env (bukan hardcode di kode) demi keamanan.
+# .env sudah masuk .gitignore, jadi tidak akan ke-push ke GitHub.
+load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+if TOKEN is None:
+    raise ValueError(
+        "DISCORD_TOKEN tidak ditemukan! Pastikan file .env sudah diisi "
+        "dengan format: DISCORD_TOKEN=token_kamu"
+    )
+
+# --- Setup Intents ---
+# Intents menentukan jenis data/event apa saja yang bot boleh terima dari Discord.
+# message_content WAJIB aktif agar bot bisa membaca isi pesan (untuk command !hack, dll).
+intents = discord.Intents.default()
+intents.message_content = True
+
+# --- Inisialisasi Bot ---
+# command_prefix="!" sesuai rancangan GDD kita (semua command diawali tanda seru).
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Daftar cog yang akan di-load otomatis saat bot start.
+# Format: "cogs.<nama_file_tanpa_.py>"
+# Cukup tambahkan nama file di list ini setiap kali kita bikin cog baru,
+# tidak perlu ubah logic loading-nya.
+INITIAL_EXTENSIONS = [
+    "cogs.profile",
+    "cogs.hack",
+    "cogs.shop",
+    "cogs.net",
+]
 
 
-class ShopCog(commands.Cog):
-    """Kumpulan command untuk belanja hardware dan upgrade rig."""
-
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-
-    @commands.command(name="shop", aliases=["rigs", "store"])
-    async def shop(self, ctx: commands.Context):
-        """
-        Menampilkan daftar hardware/rig yang tersedia untuk dibeli
-        beserta saldo Bytes yang dimiliki player saat ini.
-        Pemakaian di Discord: !shop
-        """
-        # Ambil data player untuk melihat saldo Bytes-nya
-        player = database.get_player(ctx.author.id)
-        current_bytes = player["bytes"]
-
-        embed = discord.Embed(
-            title="🛒 Black Market Hardware Shop",
-            description=f"Gunakan Bytes hasil hacking-mu untuk upgrade rig!\n💰 **Saldo Kamu:** `{current_bytes:,} Bytes`",
-            color=discord.Color.blue()
-        )
-
-        for item in config.RIG_TIERS:
-            tier = item["tier"]
-            name = item["name"]
-            price = item["price"]
-            income = item["income_per_tick"]
-
-            embed.add_field(
-                name=f"Tier {tier}: {name}",
-                value=f"💰 Harga: **{price:,} Bytes**\n⚙️ Idle Income: **+{income} Bytes/klaim**\n💡 Ketik `!buy {tier}` untuk membeli.",
-                inline=False
-            )
-
-        embed.set_footer(text="Tips: Hardware tingkat tinggi memberikan passive income lebih besar.")
-        await ctx.send(embed=embed)
-
-    @commands.command(name="buy", aliases=["upgrade"])
-    async def buy(self, ctx: commands.Context, tier: int = None):
-        """
-        Membeli atau mengupgrade rig ke tier tertentu.
-        Pemakaian di Discord: !buy <tier_number> (Contoh: !buy 1)
-        """
-        if tier is None:
-            await ctx.send("⚠️ Masukkan nomor tier rig yang ingin dibeli! Contoh: `!buy 1`. Ketik `!shop` untuk melihat daftar.")
-            return
-
-        # Validasi apakah tier yang diminta ada di config.py
-        target_tier = None
-        for item in config.RIG_TIERS:
-            if item["tier"] == tier:
-                target_tier = item
-                break
-
-        if target_tier is None:
-            await ctx.send(f"❌ Tier hardware `{tier}` tidak ditemukan di Black Market!")
-            return
-
-        user_id = ctx.author.id
-        player = database.get_player(user_id)
-        current_rig_level = player["rig_level"]
-
-        # Validasi urutan upgrade (harus berurutan atau tidak boleh downgrade)
-        if tier <= current_rig_level:
-            if tier == current_rig_level:
-                await ctx.send(f"⚠️ Kamu sudah memiliki **{target_tier['name']}**!")
-            else:
-                await ctx.send("⚠️ Kamu tidak bisa membeli hardware yang tier-nya di bawah rig kamu saat ini!")
-            return
-
-        if tier != current_rig_level + 1:
-            await ctx.send(f"⚠️ Kamu harus upgrade secara berurutan! Rig kamu saat ini ada di Tier {current_rig_level}, jadi kamu harus membeli Tier {current_rig_level + 1} terlebih dahulu.")
-            return
-
-        # Cek apakah Bytes player cukup
-        cost = target_tier["price"]
-        if player["bytes"] < cost:
-            shortage = cost - player["bytes"]
-            await ctx.send(f"❌ Bytes tidak cukup! Kamu butuh **{cost:,} Bytes** (Kurang `{shortage:,} Bytes`). Terus `!hack` dulu!")
-            return
-
-        # Proses Transaksi: Kurangi Bytes, update rig_level
-        database.add_bytes(user_id, -cost)
-        database.set_rig_level(user_id, tier)
-
-        embed = discord.Embed(
-            title="🎉 Pembelian Berhasil!",
-            description=f"Selamat, {ctx.author.mention}! Kamu berhasil mengupgrade rig-mu ke **Tier {tier}: {target_tier['name']}**!",
-            color=discord.Color.gold()
-        )
-        embed.add_field(name="💸 Biaya", value=f"-{cost:,} Bytes", inline=True)
-        embed.add_field(name="⚙️ Passive Income Baru", value=f"+{target_tier['income_per_tick']} Bytes/klaim", inline=True)
-        
-        await ctx.send(embed=embed)
+@bot.event
+async def setup_hook():
+    """
+    Dipanggil otomatis oleh discord.py SEBELUM bot login ke Discord.
+    Tempat yang tepat untuk load semua cogs/extensions.
+    """
+    for extension in INITIAL_EXTENSIONS:
+        try:
+            await bot.load_extension(extension)
+            print(f"[COG] Berhasil load: {extension}")
+        except Exception as e:
+            print(f"[COG ERROR] Gagal load {extension}: {e}")
 
 
-async def setup(bot: commands.Bot):
-    """Fungsi wajib untuk load cog shop."""
-    await bot.add_cog(ShopCog(bot))
+@bot.event
+async def on_ready():
+    """
+    Event ini otomatis terpanggil saat bot berhasil login dan siap dipakai.
+    Berguna untuk konfirmasi di terminal bahwa koneksi ke Discord berhasil.
+    """
+    print(f"[OK] Bot berhasil online sebagai: {bot.user}")
+    print(f"[OK] Terhubung ke {len(bot.guilds)} server.")
+    print("[OK] CyberHeist Bot siap menerima command...")
+
+
+@bot.command(name="ping")
+async def ping(ctx: commands.Context):
+    """
+    Command sederhana untuk tes koneksi/latency bot.
+    Contoh pemakaian di Discord: !ping
+    """
+    latency_ms = round(bot.latency * 1000)
+    await ctx.send(f"🏓 Pong! Latency: {latency_ms}ms")
+
+
+# --- Jalankan Bot ---
+if __name__ == "__main__":
+    # Pastikan database & tabel 'players' sudah siap SEBELUM bot online.
+    database.init_db()
+    bot.run(TOKEN)
