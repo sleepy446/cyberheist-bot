@@ -148,24 +148,59 @@ def add_xp(user_id: int, amount: int) -> dict:
 # PLAYER: HEAT
 # =========================================================
 
-def add_heat(user_id: int, amount: int) -> int:
+def add_heat(user_id: int, amount: int) -> dict:
     """
     Menambah (atau mengurangi jika amount negatif) Heat player,
     dengan clamp otomatis ke range [HEAT_MIN, HEAT_MAX].
-    Return nilai heat terbaru setelah perubahan.
+    Jika Heat mencapai 100, player terkena penalti (gerebek/jail):
+    Bytes disita sebagian dan Heat di-reset ke 0.
+    
+    Return dict berisi informasi heat terbaru dan status penalti:
+        {
+            "heat": int,
+            "arrested": bool,
+            "fine": int
+        }
     """
     player = get_player(user_id)
-    new_heat = player["heat"] + amount
-    new_heat = max(config.HEAT_MIN, min(config.HEAT_MAX, new_heat))
+    current_heat = player["heat"]
+    new_heat = current_heat + amount
+
+    arrested = False
+    fine = 0
+
+    # Jika Heat menyentuh atau melewati batas maksimal (100)
+    if new_heat >= config.HEAT_MAX:
+        arrested = True
+        new_heat = 0  # Reset heat setelah tertangkap
+        
+        # Penalti denda: sita 20% dari total Bytes player (minimal 50 Bytes kalau punya)
+        current_bytes = player["bytes"]
+        if current_bytes > 0:
+            fine = max(50, round(current_bytes * 0.20))
+            # Pastikan denda tidak melebihi bytes yang dimiliki
+            fine = min(fine, current_bytes)
+    else:
+        new_heat = max(config.HEAT_MIN, min(config.HEAT_MAX, new_heat))
 
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE players SET heat = ? WHERE user_id = ?",
-            (new_heat, user_id),
-        )
+        if arrested and fine > 0:
+            conn.execute(
+                "UPDATE players SET heat = ?, bytes = bytes - ? WHERE user_id = ?",
+                (new_heat, fine, user_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE players SET heat = ? WHERE user_id = ?",
+                (new_heat, user_id),
+            )
         conn.commit()
 
-    return new_heat
+    return {
+        "heat": new_heat,
+        "arrested": arrested,
+        "fine": fine
+    }
 
 
 # =========================================================

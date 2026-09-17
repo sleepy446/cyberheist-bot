@@ -30,9 +30,25 @@ class HackCog(commands.Cog):
         user_id = ctx.author.id
 
         # Pastikan player terdaftar di database
-        database.get_player(user_id)
+        player = database.get_player(user_id)
 
-        # 1. Hitung perolehan Bytes dan XP secara acak
+        # Cek dulu apakah heat saat ini sudah di ambang batas maksimal (100)
+        # Jika player nekat hack saat heat sudah 100, langsung digerebek tanpa dapet hasil!
+        if player["heat"] >= config.HEAT_MAX:
+            heat_result = database.add_heat(user_id, 0) # Trigger reset & denda dari database
+            
+            jail_embed = discord.Embed(
+                title="🚨 CEROBOH! SERVER TERLACAK & DIGEREBEK!",
+                description=f"Sial, {ctx.author.mention}! Heat kamu sudah mentok di **100/100** tapi kamu masih nekat nge-hack. Tim Cyber Crime langsung mendobrak pintu rumahmu!",
+                color=discord.Color.red()
+            )
+            jail_embed.add_field(name="💸 Denda Penyitaan", value=f"-{heat_result['fine']:,} Bytes disita oleh pihak berwenang.", inline=False)
+            jail_embed.add_field(name="🛡️ Status Karantina", value="Aksi gagal total! Hardware disita sementara dan Heat di-reset ke `0/100`.", inline=False)
+            jail_embed.set_footer(text="Gunakan !clean secara berkala sebelum heat penuh!")
+            await ctx.send(embed=jail_embed)
+            return
+
+        # 1. Hitung perolehan Bytes dan XP secara acak jika aman
         earned_bytes = random.randint(20, 60)
         earned_xp = random.randint(15, 35)
 
@@ -40,8 +56,9 @@ class HackCog(commands.Cog):
         database.add_bytes(user_id, earned_bytes)
         xp_result = database.add_xp(user_id, earned_xp)
         
-        # 3. Tambah Heat sesuai config
-        new_heat = database.add_heat(user_id, config.HEAT_GAIN_PER_HACK)
+        # 3. Tambah Heat
+        heat_result = database.add_heat(user_id, config.HEAT_GAIN_PER_HACK)
+        new_heat = heat_result["heat"]
 
         # 4. Buat narasi acak target hack
         targets = [
@@ -53,7 +70,7 @@ class HackCog(commands.Cog):
         ]
         target_name = random.choice(targets)
 
-        # 5. Susun Embed Respon
+        # 5. Susun Embed Respon Utama
         embed = discord.Embed(
             title="💻 Infiltrasi Berhasil!",
             description=f"Berhasil meretas **{target_name}**!",
@@ -72,7 +89,19 @@ class HackCog(commands.Cog):
 
         await ctx.send(embed=embed)
 
-        # 6. Jika player naik level, kirim pesan tambahan
+        # 6. Jika penambahan heat dari hack ini membuatnya pas menyentuh/lewat 100
+        if heat_result["arrested"]:
+            jail_embed = discord.Embed(
+                title="🚨 SERVER TERLACAK - ANDA DIGEREBEK!",
+                description=f"Sial, {ctx.author.mention}! Heat kamu mencapai **100/100**. Tim Cyber Crime berhasil melacak lokasimu!",
+                color=discord.Color.red()
+            )
+            jail_embed.add_field(name="💸 Denda Penyitaan", value=f"-{heat_result['fine']:,} Bytes disita oleh pihak berwenang.", inline=False)
+            jail_embed.add_field(name="🛡️ Status Karantina", value="Hardware diputus sementara. Heat di-reset ke `0/100`.", inline=False)
+            jail_embed.set_footer(text="Hati-hati ke depannya. Jangan lupa !clean sebelum heat mentok!")
+            await ctx.send(embed=jail_embed)
+
+        # 7. Jika player naik level, kirim pesan tambahan
         if xp_result["leveled_up"]:
             level_embed = discord.Embed(
                 title="🎉 LEVEL UP!",

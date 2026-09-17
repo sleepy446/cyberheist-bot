@@ -45,6 +45,7 @@ INITIAL_EXTENSIONS = [
     "cogs.hack",
     "cogs.shop",
     "cogs.net",
+    "cogs.clean",
 ]
 
 
