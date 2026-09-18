@@ -32,14 +32,17 @@ class CleanCog(commands.Cog):
 
         # Kalau heat sudah 0, tidak perlu dibersihkan
         if current_heat <= 0:
+            # Penting: Reset cooldown jika aksi tidak jadi dilakukan
             ctx.command.reset_cooldown(ctx)
             await ctx.send(f"🛡️ {ctx.author.mention}, jejak digitalmu sudah bersih total! Heat kamu di angka `0/100`.")
             return
 
         # Tentukan biaya pembersihan berdasarkan seberapa tinggi heat saat ini
-        cleaning_cost = current_heat * 2  # Contoh: Heat 50 = 150 Bytes
+        # Contoh: Heat 50 = 100 Bytes (dihitung dari config atau rumus dinamis)
+        cleaning_cost = current_heat * 3.5 
 
         if player["bytes"] < cleaning_cost:
+            # Penting: Reset cooldown jika gagal bayar
             ctx.command.reset_cooldown(ctx)
             await ctx.send(
                 f"❌ Bytes kamu tidak cukup untuk membayar jasa hacker VPN pembersih jejak!\n"
@@ -48,9 +51,13 @@ class CleanCog(commands.Cog):
             )
             return
 
-        # Kurangi Bytes (bayar jasa) dan kurangi Heat sejumlah config
+        # 1. Kurangi Bytes (bayar jasa)
         database.add_bytes(user_id, -cleaning_cost)
-        new_heat = database.add_heat(user_id, -config.HEAT_REDUCTION_PER_CLEAN)
+        
+        # 2. Kurangi Heat sejumlah config.
+        # PERBAIKAN: Tangkap hasil dictionary dari database, lalu ambil nilai int ["heat"]-nya.
+        heat_result = database.add_heat(user_id, -config.HEAT_REDUCTION_PER_CLEAN)
+        new_heat = heat_result["heat"]
 
         # Tentukan status Heat secara dinamis sesuai threshold config
         if new_heat >= config.HEAT_DANGER_THRESHOLD:
@@ -60,6 +67,7 @@ class CleanCog(commands.Cog):
         else:
             heat_status = "🟢 Aman"
 
+        # Susun Embed Respon
         embed = discord.Embed(
             title="🧹 Jejak Digital Dibersihkan",
             description=f"Berhasil meretas balik server kepolisian virtual dan mencuci IP address, {ctx.author.mention}!",
@@ -82,6 +90,7 @@ class CleanCog(commands.Cog):
                 delete_after=5
             )
         else:
+            # Print error lain ke console untuk debugging
             raise error
 
 
