@@ -21,7 +21,8 @@ class ShopCog(commands.Cog):
     async def shop(self, ctx: commands.Context):
         """Menampilkan daftar hardware rig yang bisa dibeli."""
         user_id = ctx.author.id
-        player = database.get_player(user_id)
+        guild_id = ctx.guild.id
+        player = database.get_player(user_id, guild_id)
         user_bytes = player["bytes"]
 
         embed = discord.Embed(
