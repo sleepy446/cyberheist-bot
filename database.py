@@ -19,65 +19,31 @@ def init_db():
     """
     Membuat folder data/ (kalau belum ada) dan tabel `players`
     (kalau belum ada). Dipanggil sekali saat bot pertama kali start.
-    Juga menjalankan migration ringan untuk menambah kolom baru
-    (jail_until) ke tabel yang sudah ada sebelumnya, tanpa menghapus
-    data player yang sudah tersimpan.
     """
     os.makedirs(os.path.dirname(config.DATABASE_PATH), exist_ok=True)
 
     with get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS players (
-                user_id     INTEGER PRIMARY KEY,
+                user_id     INTEGER,
+                guild_id    INTEGER,
                 bytes       INTEGER NOT NULL DEFAULT 0,
                 level       INTEGER NOT NULL DEFAULT 1,
                 xp          INTEGER NOT NULL DEFAULT 0,
                 heat        INTEGER NOT NULL DEFAULT 0,
                 rig_level   INTEGER NOT NULL DEFAULT 0,
-                jail_until  INTEGER NOT NULL DEFAULT 0
+                jail_until  INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, guild_id)
             )
         """)
         conn.commit()
-
-        # --- Migration: tambah kolom jail_until kalau tabel lama belum punya ---
-        # Ini penting karena tabel `players` di database kamu sudah ada isinya
-        # (dibuat sebelum kolom ini ditambahkan). CREATE TABLE IF NOT EXISTS
-        # di atas TIDAK akan menambah kolom baru ke tabel yang sudah ada,
-        # jadi kita cek manual dan ALTER TABLE kalau perlu.
-        existing_columns = [
-            row["name"] for row in conn.execute("PRAGMA table_info(players)")
-        ]
-        if "jail_until" not in existing_columns:
-            conn.execute(
-                "ALTER TABLE players ADD COLUMN jail_until INTEGER NOT NULL DEFAULT 0"
-            )
-            conn.commit()
-            print("[DB] Migration: kolom 'jail_until' berhasil ditambahkan.")
-
     print("[DB] Database siap. Tabel 'players' sudah ada/dibuat.")
 
 
 @contextmanager
 def get_connection():
-    """
-    Context manager untuk membuka koneksi SQLite dengan aman.
-    Menggunakan 'with get_connection() as conn:' otomatis menutup
-    koneksi setelah selesai, walaupun terjadi error di tengah jalan.
-
-    timeout=10 membuat SQLite otomatis MENUNGGU (retry) sampai 10 detik
-    kalau file sedang dipakai proses lain, alih-alih langsung melempar
-    error 'database is locked'. Ini jaring pengaman tambahan, TAPI kalau
-    ada aplikasi lain (seperti DB Browser for SQLite) yang membuka file
-    ini dalam mode write/edit dalam waktu lama, error tetap bisa muncul
-    setelah 10 detik menunggu - jadi tetap hindari membuka DB Browser
-    bersamaan saat bot sedang berjalan.
-    """
     conn = sqlite3.connect(config.DATABASE_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row  # biar hasil query bisa diakses seperti dict
-    # WAL (Write-Ahead Logging) mode: memungkinkan operasi baca dan tulis
-    # berjalan bersamaan dengan jauh lebih toleran dibanding mode default,
-    # cocok untuk aplikasi seperti bot Discord yang banyak command jalan
-    # nyaris bersamaan dari berbagai user.
+    conn.row_factory = sqlite3.Row  
     conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
@@ -89,24 +55,19 @@ def get_connection():
 # PLAYER: CREATE & READ
 # =========================================================
 
-def get_player(user_id: int) -> sqlite3.Row:
-    """
-    Mengambil data player berdasarkan user_id.
-    Kalau player belum terdaftar di database, otomatis dibuatkan
-    row baru dengan nilai default (bytes=0, level=1, dst).
-    """
+def get_player(user_id: int, guild_id: int) -> sqlite3.Row:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM players WHERE user_id = ?", (user_id,)
+            "SELECT * FROM players WHERE user_id = ? AND guild_id = ?", (user_id, guild_id)
         ).fetchone()
 
         if row is None:
             conn.execute(
-                "INSERT INTO players (user_id) VALUES (?)", (user_id,)
+                "INSERT INTO players (user_id, guild_id) VALUES (?, ?)", (user_id, guild_id)
             )
             conn.commit()
             row = conn.execute(
-                "SELECT * FROM players WHERE user_id = ?", (user_id,)
+                "SELECT * FROM players WHERE user_id = ? AND guild_id = ?", (user_id, guild_id)
             ).fetchone()
 
         return row
@@ -116,32 +77,23 @@ def get_player(user_id: int) -> sqlite3.Row:
 # PLAYER: BYTES (currency)
 # =========================================================
 
-def add_bytes(user_id: int, amount: int):
-    """
-    Menambah (atau mengurangi jika amount negatif) jumlah Bytes player.
-    Memastikan player sudah ada di database dulu (auto-create).
-    """
-    get_player(user_id)  # pastikan row sudah ada
+def add_bytes(user_id: int, guild_id: int, amount: int):
+    get_player(user_id, guild_id)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE players SET bytes = bytes + ? WHERE user_id = ?",
-            (amount, user_id),
+            "UPDATE players SET bytes = bytes + ? WHERE user_id = ? AND guild_id = ?",
+            (amount, user_id, guild_id),
         )
         conn.commit()
 
 
-def set_bytes(user_id: int, amount: int):
-    """
-    Mengatur Bytes player LANGSUNG ke nilai tertentu (bukan menambah).
-    Dipakai oleh command admin !setbytes untuk keperluan testing,
-    misal set ke angka pas 10000 buat tes fitur !shop.
-    """
-    get_player(user_id)  # pastikan row sudah ada
-    amount = max(0, amount)  # Bytes tidak boleh negatif
+def set_bytes(user_id: int, guild_id: int, amount: int):
+    get_player(user_id, guild_id)
+    amount = max(0, amount)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE players SET bytes = ? WHERE user_id = ?",
-            (amount, user_id),
+            "UPDATE players SET bytes = ? WHERE user_id = ? AND guild_id = ?",
+            (amount, user_id, guild_id),
         )
         conn.commit()
 
@@ -150,29 +102,14 @@ def set_bytes(user_id: int, amount: int):
 # PLAYER: XP & LEVEL
 # =========================================================
 
-def add_xp(user_id: int, amount: int) -> dict:
-    """
-    Menambah XP player, dan otomatis menangani level-up jika XP
-    yang terkumpul sudah melewati threshold (bisa naik lebih dari
-    1 level sekaligus kalau XP yang didapat besar).
-
-    Return dict berisi info untuk keperluan pesan di Discord:
-        {
-            "leveled_up": bool,
-            "old_level": int,
-            "new_level": int,
-            "current_xp": int,
-        }
-    """
-    player = get_player(user_id)
+def add_xp(user_id: int, guild_id: int, amount: int) -> dict:
+    player = get_player(user_id, guild_id)
     current_level = player["level"]
     current_xp = player["xp"] + amount
 
     old_level = current_level
     leveled_up = False
 
-    # Cek apakah XP sekarang cukup untuk naik level (bisa berkali-kali
-    # kalau amount XP yang didapat sangat besar)
     while current_xp >= config.xp_required_for_level(current_level):
         current_xp -= config.xp_required_for_level(current_level)
         current_level += 1
@@ -180,8 +117,8 @@ def add_xp(user_id: int, amount: int) -> dict:
 
     with get_connection() as conn:
         conn.execute(
-            "UPDATE players SET xp = ?, level = ? WHERE user_id = ?",
-            (current_xp, current_level, user_id),
+            "UPDATE players SET xp = ?, level = ? WHERE user_id = ? AND guild_id = ?",
+            (current_xp, current_level, user_id, guild_id),
         )
         conn.commit()
 
@@ -193,19 +130,14 @@ def add_xp(user_id: int, amount: int) -> dict:
     }
 
 
-def set_level(user_id: int, level: int, xp: int = 0):
-    """
-    Mengatur Level dan XP player LANGSUNG ke nilai tertentu.
-    Dipakai oleh command admin !setlevel untuk keperluan testing,
-    misal lompat ke level 50 buat cek balancing XP curve di level tinggi.
-    """
-    get_player(user_id)  # pastikan row sudah ada
-    level = max(1, level)  # Level minimal 1
+def set_level(user_id: int, guild_id: int, level: int, xp: int = 0):
+    get_player(user_id, guild_id)
+    level = max(1, level)
     xp = max(0, xp)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE players SET level = ?, xp = ? WHERE user_id = ?",
-            (level, xp, user_id),
+            "UPDATE players SET level = ?, xp = ? WHERE user_id = ? AND guild_id = ?",
+            (level, xp, user_id, guild_id),
         )
         conn.commit()
 
@@ -214,28 +146,8 @@ def set_level(user_id: int, level: int, xp: int = 0):
 # PLAYER: HEAT
 # =========================================================
 
-def add_heat(user_id: int, amount: int) -> dict:
-    """
-    Menambah (atau mengurangi jika amount negatif) Heat player,
-    dengan clamp otomatis ke range [HEAT_MIN, HEAT_MAX].
-
-    Jika Heat mencapai 100, player terkena penalti (gerebek/jail):
-      - Heat di-reset ke 0
-      - Bytes disita sebagian (HEAT_ARREST_FINE_PERCENTAGE dari total,
-        minimal HEAT_ARREST_FINE_MINIMUM)
-      - Player masuk status "jailed" selama JAIL_COOLDOWN_SECONDS detik
-        (disimpan sebagai timestamp di kolom jail_until), sehingga
-        tidak bisa !hack sampai cooldown ini berakhir.
-
-    Return dict berisi informasi heat terbaru dan status penalti:
-        {
-            "heat": int,
-            "arrested": bool,
-            "fine": int,
-            "jail_until": int   # unix timestamp, 0 kalau tidak arrested
-        }
-    """
-    player = get_player(user_id)
+def add_heat(user_id: int, guild_id: int, amount: int) -> dict:
+    player = get_player(user_id, guild_id)
     current_heat = player["heat"]
     new_heat = current_heat + amount
 
@@ -243,23 +155,16 @@ def add_heat(user_id: int, amount: int) -> dict:
     fine = 0
     jail_until = player["jail_until"]
 
-    # Jika Heat menyentuh atau melewati batas maksimal (100)
     if new_heat >= config.HEAT_MAX:
         arrested = True
-        new_heat = 0  # Reset heat setelah tertangkap
-
-        # Penalti denda: sita persentase dari total Bytes player
-        # (minimal HEAT_ARREST_FINE_MINIMUM Bytes kalau punya)
+        new_heat = 0
         current_bytes = player["bytes"]
         if current_bytes > 0:
             fine = max(
                 config.HEAT_ARREST_FINE_MINIMUM,
                 round(current_bytes * config.HEAT_ARREST_FINE_PERCENTAGE),
             )
-            # Pastikan denda tidak melebihi bytes yang dimiliki
             fine = min(fine, current_bytes)
-
-        # Set cooldown: player tidak bisa !hack sampai waktu ini
         jail_until = int(time.time()) + config.JAIL_COOLDOWN_SECONDS
     else:
         new_heat = max(config.HEAT_MIN, min(config.HEAT_MAX, new_heat))
@@ -269,13 +174,13 @@ def add_heat(user_id: int, amount: int) -> dict:
             conn.execute(
                 """UPDATE players
                    SET heat = ?, bytes = bytes - ?, jail_until = ?
-                   WHERE user_id = ?""",
-                (new_heat, fine, jail_until, user_id),
+                   WHERE user_id = ? AND guild_id = ?""",
+                (new_heat, fine, jail_until, user_id, guild_id),
             )
         else:
             conn.execute(
-                "UPDATE players SET heat = ? WHERE user_id = ?",
-                (new_heat, user_id),
+                "UPDATE players SET heat = ? WHERE user_id = ? AND guild_id = ?",
+                (new_heat, user_id, guild_id),
             )
         conn.commit()
 
@@ -287,36 +192,18 @@ def add_heat(user_id: int, amount: int) -> dict:
     }
 
 
-def clear_jail(user_id: int):
-    """
-    Membatalkan status jail player secara instan (set jail_until = 0).
-    Dipakai oleh command admin !unjail untuk keperluan testing/moderasi,
-    supaya tidak perlu edit database manual via GUI (yang rawan human
-    error dan berisiko bikin file ter-lock saat bot sedang berjalan).
-    """
-    get_player(user_id)  # pastikan row sudah ada
+def clear_jail(user_id: int, guild_id: int):
+    get_player(user_id, guild_id)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE players SET jail_until = 0 WHERE user_id = ?",
-            (user_id,),
+            "UPDATE players SET jail_until = 0 WHERE user_id = ? AND guild_id = ?",
+            (user_id, guild_id),
         )
         conn.commit()
 
 
-def is_jailed(user_id: int) -> dict:
-    """
-    Mengecek apakah player masih dalam status "jailed" (cooldown
-    setelah arrested). Dipanggil oleh command seperti !hack SEBELUM
-    mengizinkan aksi, supaya player tidak bisa hack selama masih
-    dalam masa tahanan.
-
-    Return dict:
-        {
-            "jailed": bool,
-            "seconds_remaining": int   # 0 kalau tidak jailed
-        }
-    """
-    player = get_player(user_id)
+def is_jailed(user_id: int, guild_id: int) -> dict:
+    player = get_player(user_id, guild_id)
     jail_until = player["jail_until"]
     now = int(time.time())
 
@@ -326,19 +213,13 @@ def is_jailed(user_id: int) -> dict:
     return {"jailed": False, "seconds_remaining": 0}
 
 
-def set_heat(user_id: int, value: int):
-    """
-    Mengatur Heat player LANGSUNG ke nilai tertentu (0-100), TANPA
-    memicu logic arrested/jail seperti add_heat(). Murni untuk admin
-    override saat testing, misal set heat ke 65 buat cek tampilan
-    status "Waspada" di !profile tanpa harus grinding !hack berkali-kali.
-    """
-    get_player(user_id)  # pastikan row sudah ada
+def set_heat(user_id: int, guild_id: int, value: int):
+    get_player(user_id, guild_id)
     value = max(config.HEAT_MIN, min(config.HEAT_MAX, value))
     with get_connection() as conn:
         conn.execute(
-            "UPDATE players SET heat = ? WHERE user_id = ?",
-            (value, user_id),
+            "UPDATE players SET heat = ? WHERE user_id = ? AND guild_id = ?",
+            (value, user_id, guild_id),
         )
         conn.commit()
 
@@ -347,13 +228,12 @@ def set_heat(user_id: int, value: int):
 # PLAYER: RIG LEVEL
 # =========================================================
 
-def set_rig_level(user_id: int, rig_level: int):
-    """Mengatur rig_level player ke nilai tertentu (dipakai saat beli upgrade)."""
-    get_player(user_id)  # pastikan row sudah ada
+def set_rig_level(user_id: int, guild_id: int, rig_level: int):
+    get_player(user_id, guild_id)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE players SET rig_level = ? WHERE user_id = ?",
-            (rig_level, user_id),
+            "UPDATE players SET rig_level = ? WHERE user_id = ? AND guild_id = ?",
+            (rig_level, user_id, guild_id),
         )
         conn.commit()
 
@@ -362,15 +242,19 @@ def set_rig_level(user_id: int, rig_level: int):
 # LEADERBOARD
 # =========================================================
 
-def get_leaderboard(limit: int = 10):
-    """
-    Mengambil daftar top player berdasarkan Bytes terbanyak.
-    Return list of sqlite3.Row, urutan dari terkaya ke termiskin.
-    """
+def get_leaderboard(limit: int = 10, guild_id: int = None):
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM players ORDER BY bytes DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if guild_id:
+            rows = conn.execute(
+                "SELECT * FROM players WHERE guild_id = ? ORDER BY bytes DESC LIMIT ?",
+                (guild_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT user_id, SUM(bytes) as bytes, MAX(level) as level 
+                   FROM players GROUP BY user_id ORDER BY bytes DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
         return rows
 
 
@@ -378,45 +262,32 @@ def get_leaderboard(limit: int = 10):
 # ADMIN / MAINTENANCE
 # =========================================================
 
-def reset_player(user_id: int):
-    """
-    Menghapus SELURUH data player dari database (kembali ke kondisi
-    seolah belum pernah main sama sekali). Dipakai oleh command admin
-    !resetplayer untuk keperluan testing dari kondisi "player baru".
-
-    Row akan otomatis dibuat ulang dengan nilai default (bytes=0,
-    level=1, dst) di panggilan get_player() berikutnya.
-    """
+def reset_player(user_id: int, guild_id: int):
     with get_connection() as conn:
-        conn.execute("DELETE FROM players WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM players WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
         conn.commit()
 
 
-def get_economy_stats() -> dict:
-    """
-    Mengambil ringkasan statistik ekonomi server: total player terdaftar,
-    total Bytes yang beredar, rata-rata level, dan rata-rata Bytes.
-    Dipakai oleh command admin !dbstats untuk memantau kesehatan
-    balancing game secara keseluruhan (misal: apakah Bytes terlalu
-    mudah didapat, apakah rata-rata level wajar, dst).
-
-    Return dict:
-        {
-            "total_players": int,
-            "total_bytes": int,
-            "avg_level": float,
-            "avg_bytes": float,
-        }
-    """
+def get_economy_stats(guild_id: int = None) -> dict:
     with get_connection() as conn:
-        row = conn.execute("""
-            SELECT
-                COUNT(*) AS total_players,
-                COALESCE(SUM(bytes), 0) AS total_bytes,
-                COALESCE(AVG(level), 0) AS avg_level,
-                COALESCE(AVG(bytes), 0) AS avg_bytes
-            FROM players
-        """).fetchone()
+        if guild_id:
+            row = conn.execute("""
+                SELECT
+                    COUNT(*) AS total_players,
+                    COALESCE(SUM(bytes), 0) AS total_bytes,
+                    COALESCE(AVG(level), 0) AS avg_level,
+                    COALESCE(AVG(bytes), 0) AS avg_bytes
+                FROM players WHERE guild_id = ?
+            """, (guild_id,)).fetchone()
+        else:
+            row = conn.execute("""
+                SELECT
+                    COUNT(*) AS total_players,
+                    COALESCE(SUM(bytes), 0) AS total_bytes,
+                    COALESCE(AVG(level), 0) AS avg_level,
+                    COALESCE(AVG(bytes), 0) AS avg_bytes
+                FROM players
+            """).fetchone()
 
         return {
             "total_players": row["total_players"],

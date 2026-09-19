@@ -27,7 +27,8 @@ class CleanCog(commands.Cog):
         Pemakaian di Discord: !clean
         """
         user_id = ctx.author.id
-        player = database.get_player(user_id)
+        guild_id = ctx.guild.id
+        player = database.get_player(user_id, guild_id)
         current_heat = player["heat"]
 
         # Kalau heat sudah 0, tidak perlu dibersihkan
@@ -52,11 +53,11 @@ class CleanCog(commands.Cog):
             return
 
         # 1. Kurangi Bytes (bayar jasa)
-        database.add_bytes(user_id, -cleaning_cost)
+        database.add_bytes(user_id, guild_id, -cleaning_cost)
         
         # 2. Kurangi Heat sejumlah config.
         # PERBAIKAN: Tangkap hasil dictionary dari database, lalu ambil nilai int ["heat"]-nya.
-        heat_result = database.add_heat(user_id, -config.HEAT_REDUCTION_PER_CLEAN)
+        heat_result = database.add_heat(user_id, guild_id, -config.HEAT_REDUCTION_PER_CLEAN)
         new_heat = heat_result["heat"]
 
         # Tentukan status Heat secara dinamis sesuai threshold config

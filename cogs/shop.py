@@ -1,8 +1,7 @@
 """
-CyberHeist Bot - Shop & Rig Cog
-=================================
-Cog ini menangani sistem ekonomi lanjutan: melihat daftar hardware
-di toko (!shop) dan membeli upgrade rig (!rig) untuk passive income.
+CyberHeist Bot - Shop Cog
+=========================
+Cog ini menangani pembelian hardware/rig via command !shop dan !buy.
 """
 
 import discord
@@ -13,95 +12,96 @@ import config
 
 
 class ShopCog(commands.Cog):
-    """Kumpulan command untuk belanja hardware dan upgrade rig."""
+    """Kumpulan command untuk toko hardware siber."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="shop", aliases=["rigs", "store"])
+    @commands.command(name="shop", aliases=["blackmarket", "store"])
     async def shop(self, ctx: commands.Context):
-        """
-        Menampilkan daftar hardware/rig yang tersedia untuk dibeli.
-        Pemakaian di Discord: !shop
-        """
+        """Menampilkan daftar hardware rig yang bisa dibeli."""
+        user_id = ctx.author.id
+        player = database.get_player(user_id)
+        user_bytes = player["bytes"]
+
         embed = discord.Embed(
             title="🛒 Black Market Hardware Shop",
-            description="Gunakan Bytes hasil hacking-mu untuk upgrade rig dan otomatisasi penambangan!",
-            color=discord.Color.blue()
+            description=(
+                f"Gunakan Bytes hasil hacking-mu untuk upgrade rig dan automatisasi penambangan!\n\n"
+                f"💰 **Saldo Bytes Kamu:** `{user_bytes:,} Bytes`"
+            ),
+            color=discord.Color.dark_embed()
         )
 
-        for item in config.RIG_TIERS:
-            tier = item["tier"]
-            name = item["name"]
-            price = item["price"]
-            income = item["income_per_tick"]
-
-            embed.add_field(
-                name=f"Tier {tier}: {name}",
-                value=f"💰 Harga: **{price:,} Bytes**\n⚙️ Idle Income: **+{income} Bytes/klaim**\n💡 Ketik `!buy {tier}` untuk membeli.",
-                inline=False
-            )
+        embed.add_field(
+            name="Tier 1: Botnet Kecil (Ketik `!buy 1`)",
+            value="Harga: `500 Bytes`\nIdle Income: `+5 Bytes/klaim`",
+            inline=False
+        )
+        embed.add_field(
+            name="Tier 2: GPU Rig (Ketik `!buy 2`)",
+            value="Harga: `2,500 Bytes`\nIdle Income: `+30 Bytes/klaim`",
+            inline=False
+        )
+        embed.add_field(
+            name="Tier 3: Server Rack (Ketik `!buy 3`)",
+            value="Harga: `10,000 Bytes`\nIdle Income: `+150 Bytes/klaim`",
+            inline=False
+        )
 
         embed.set_footer(text="Tips: Hardware tingkat tinggi memberikan passive income lebih besar.")
         await ctx.send(embed=embed)
 
-    @commands.command(name="buy", aliases=["upgrade"])
+    @commands.command(name="buy")
     async def buy(self, ctx: commands.Context, tier: int = None):
-        """
-        Membeli atau mengupgrade rig ke tier tertentu.
-        Pemakaian di Discord: !buy <tier_number> (Contoh: !buy 1)
-        """
+        """Membeli hardware rig berdasarkan nomor tier (1, 2, atau 3)."""
         if tier is None:
-            await ctx.send("⚠️ Masukkan nomor tier rig yang ingin dibeli! Contoh: `!buy 1`. Ketik `!shop` untuk melihat daftar.")
+            await ctx.send("❌ Masukkan nomor tier yang ingin dibeli, contoh: `!buy 1`, `!buy 2`, atau `!buy 3`.")
             return
 
-        # Validasi apakah tier yang diminta ada di config.py
-        target_tier = None
-        for item in config.RIG_TIERS:
-            if item["tier"] == tier:
-                target_tier = item
-                break
+        # Definisikan harga dan data rig berdasarkan tier
+        items = {
+            1: {"name": "Botnet Kecil (Tier 1)", "price": 500},
+            2: {"name": "GPU Rig (Tier 2)", "price": 2500},
+            3: {"name": "Server Rack (Tier 3)", "price": 10000}
+        }
 
-        if target_tier is None:
-            await ctx.send(f"❌ Tier hardware `{tier}` tidak ditemukan di Black Market!")
+        if tier not in items:
+            await ctx.send("❌ Tier hardware tidak valid! Pilih tier 1, 2, atau 3.")
             return
 
+        selected_item = items[tier]
         user_id = ctx.author.id
-        player = database.get_player(user_id)
-        current_rig_level = player["rig_level"]
+        guild_id = ctx.guild.id
+        player = database.get_player(user_id, guild_id)
 
-        # Validasi urutan upgrade (harus berurutan atau tidak boleh downgrade)
-        if tier <= current_rig_level:
-            if tier == current_rig_level:
-                await ctx.send(f"⚠️ Kamu sudah memiliki **{target_tier['name']}**!")
-            else:
-                await ctx.send("⚠️ Kamu tidak bisa membeli hardware yang tier-nya di bawah rig kamu saat ini!")
-            return
-
-        if tier != current_rig_level + 1:
-            await ctx.send(f"⚠️ Kamu harus upgrade secara berurutan! Rig kamu saat ini ada di Tier {current_rig_level}, jadi kamu harus membeli Tier {current_rig_level + 1} terlebih dahulu.")
+        # --- VALIDASI KEPEMILIKAN RIG ---
+        # Cegah pemain membeli hardware yang tingkatnya sama atau lebih rendah dari yang sudah dimiliki.
+        if player["rig_level"] >= tier:
+            await ctx.send(
+                f"❌ Kamu sudah memiliki **{config.RIG_TIERS[player['rig_level'] - 1]['name']}** (Tier {player['rig_level']})!\n"
+                f"Kamu tidak bisa membeli hardware tier yang sama atau lebih rendah."
+            )
             return
 
         # Cek apakah Bytes player cukup
-        cost = target_tier["price"]
-        if player["bytes"] < cost:
-            shortage = cost - player["bytes"]
-            await ctx.send(f"❌ Bytes tidak cukup! Kamu butuh **{cost:,} Bytes** (Kurang `{shortage:,} Bytes`). Terus `!hack` dulu!")
+        if player["bytes"] < selected_item["price"]:
+            await ctx.send(
+                f"❌ Bytes kamu tidak cukup untuk membeli **{selected_item['name']}**!\n"
+                f"Butuh **{selected_item['price']:,} Bytes**, saldo kamu saat ini: `{player['bytes']:,} Bytes`."
+            )
             return
 
-        # Proses Transaksi: Kurangi Bytes, update rig_level
-        database.add_bytes(user_id, -cost)
-        database.set_rig_level(user_id, tier)
+        # 1. Kurangi bytes player
+        database.add_bytes(user_id, guild_id, -selected_item["price"])
 
-        embed = discord.Embed(
-            title="🎉 Pembelian Berhasil!",
-            description=f"Selamat, {ctx.author.mention}! Kamu berhasil mengupgrade rig-mu ke **Tier {tier}: {target_tier['name']}**!",
-            color=discord.Color.gold()
+        # 2. Update level rig pemain di database (PERBAIKAN BUG)
+        database.set_rig_level(user_id, guild_id, tier)
+
+        await ctx.send(
+            f"✅ Berhasil membeli **{selected_item['name']}** seharga **{selected_item['price']:,} Bytes**! "
+            f"Sistem penambangan siber ditingkatkan (Sekarang Tier {tier})."
         )
-        embed.add_field(name="💸 Biaya", value=f"-{cost:,} Bytes", inline=True)
-        embed.add_field(name="⚙️ Passive Income Baru", value=f"+{target_tier['income_per_tick']} Bytes/klaim", inline=True)
-        
-        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):

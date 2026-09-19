@@ -14,6 +14,18 @@ import database
 import config
 
 
+def make_progress_bar(current: int, max_val: int, length: int = 10, fill_char: str = "█", empty_char: str = "░") -> str:
+    """
+    Membuat visual progress bar sederhana untuk Discord Embed.
+    """
+    if max_val <= 0:
+        return empty_char * length
+    percent = current / max_val
+    filled = round(percent * length)
+    filled = max(0, min(length, filled))  # clamp agar tidak out of bounds
+    return (fill_char * filled) + (empty_char * (length - filled))
+
+
 class ProfileCog(commands.Cog):
     """Kumpulan command untuk menampilkan status/profil player."""
 
@@ -27,11 +39,13 @@ class ProfileCog(commands.Cog):
         status Jail (kalau sedang dalam masa karantina setelah arrested).
         Pemakaian di Discord: !profile atau !stats
         """
-        player = database.get_player(ctx.author.id)
+        player = database.get_player(ctx.author.id, ctx.guild.id)
 
         # Hitung XP yang dibutuhkan untuk naik ke level berikutnya,
         # supaya bisa ditampilkan sebagai progress bar sederhana (xp/xp_needed)
         xp_needed = config.xp_required_for_level(player["level"])
+        xp_percent = round((player["xp"] / xp_needed) * 100) if xp_needed > 0 else 0
+        xp_bar = make_progress_bar(player["xp"], xp_needed, length=10)
 
         # Tentukan status Heat secara deskriptif, bukan cuma angka mentah,
         # biar player langsung paham seberapa bahaya kondisinya saat ini.
@@ -42,6 +56,8 @@ class ProfileCog(commands.Cog):
             heat_status = "🟡 Waspada"
         else:
             heat_status = "🟢 Aman"
+        
+        heat_bar = make_progress_bar(heat, config.HEAT_MAX, length=10)
 
         # Cari nama rig sesuai rig_level player (rig_level 0 = belum punya hardware)
         if player["rig_level"] == 0:
@@ -53,21 +69,26 @@ class ProfileCog(commands.Cog):
         # --- CEK STATUS JAIL ---
         # Kalau player sedang dalam masa karantina (habis arrested),
         # tampilkan sebagai field tambahan yang mencolok di embed.
-        jail_status = database.is_jailed(ctx.author.id)
+        jail_status = database.is_jailed(ctx.author.id, ctx.guild.id)
 
         embed = discord.Embed(
             title=f"🕵️ Profil Hacker: {ctx.author.display_name}",
             color=discord.Color.dark_purple(),
         )
         embed.add_field(name="Level", value=f"`{player['level']}`", inline=True)
-        embed.add_field(
-            name="XP", value=f"`{player['xp']} / {xp_needed}`", inline=True
-        )
         embed.add_field(name="Bytes", value=f"`{player['bytes']:,}`", inline=True)
+        embed.add_field(name="Hardware", value=f"`{rig_name}`", inline=True)
+        
         embed.add_field(
-            name="Heat", value=f"`{heat}/100` - {heat_status}", inline=False
+            name="XP Progress", 
+            value=f"`{xp_bar}` `{player['xp']} / {xp_needed}` ({xp_percent}%)", 
+            inline=False
         )
-        embed.add_field(name="Hardware", value=f"`{rig_name}`", inline=False)
+        embed.add_field(
+            name="Heat Level", 
+            value=f"`{heat_bar}` `{heat}/100` — {heat_status}", 
+            inline=False
+        )
 
         # Field status jail hanya muncul kalau player memang sedang jailed,
         # supaya embed tidak "berisik" untuk player yang statusnya normal.
@@ -90,6 +111,47 @@ class ProfileCog(commands.Cog):
 
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
 
+        await ctx.send(embed=embed)
+
+    @commands.command(name="leaderboard", aliases=["lb", "top"])
+    async def leaderboard(self, ctx: commands.Context, scope: str = "server"):
+        """
+        Menampilkan peringkat hacker.
+        Pemakaian: !leaderboard [server|global]
+        """
+        if scope.lower() == "global":
+            leaderboard_data = database.get_leaderboard(limit=10)
+            title = "🏆 Papan Peringkat Hacker Global (Top 10)"
+        else:
+            leaderboard_data = database.get_leaderboard(limit=10, guild_id=ctx.guild.id)
+            title = f"🏆 Papan Peringkat Hacker Server (Top 10)"
+
+        if not leaderboard_data:
+            await ctx.send("📭 Belum ada data hacker di database.")
+            return
+
+        embed = discord.Embed(
+            title=title,
+            description="Daftar hacker paling makmur.",
+            color=discord.Color.gold()
+        )
+
+        leaderboard_list = []
+        for index, row in enumerate(leaderboard_data, 1):
+            user_id = row["user_id"]
+            # Coba ambil user dari cache bot atau API discord secara aman
+            try:
+                member = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                name = member.display_name
+            except Exception:
+                name = f"Hacker Tersembunyi #{user_id}"
+            
+            # Berikan medali untuk 3 peringkat teratas
+            medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"`#{index}`"
+            leaderboard_list.append(f"{medal} **{name}** — Level `{row['level']}` | `{row['bytes']:,}` Bytes")
+
+        embed.description = "\n".join(leaderboard_list)
+        embed.set_footer(text="Kejar peringkat teratas dengan rajin !hack dan !net!")
         await ctx.send(embed=embed)
 
 

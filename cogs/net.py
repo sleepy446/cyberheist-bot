@@ -27,7 +27,8 @@ class NetCog(commands.Cog):
         Pemakaian di Discord: !net
         """
         user_id = ctx.author.id
-        player = database.get_player(user_id)
+        guild_id = ctx.guild.id
+        player = database.get_player(user_id, guild_id)
         rig_level = player["rig_level"]
 
         # Cek apakah player sudah punya hardware (rig_level > 0)
@@ -47,7 +48,7 @@ class NetCog(commands.Cog):
         rig_name = rig_data["name"]
 
         # Tambahkan Bytes ke database player
-        database.add_bytes(user_id, income)
+        database.add_bytes(user_id, guild_id, income)
 
         embed = discord.Embed(
             title="📡 Jaringan Penambangan Berhasil Diklaim",
