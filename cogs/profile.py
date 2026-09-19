@@ -23,7 +23,8 @@ class ProfileCog(commands.Cog):
     @commands.command(name="profile", aliases=["stats"])
     async def profile(self, ctx: commands.Context):
         """
-        Menampilkan status player: Level, Bytes, XP, Heat, dan Rig.
+        Menampilkan status player: Level, Bytes, XP, Heat, Rig, dan
+        status Jail (kalau sedang dalam masa karantina setelah arrested).
         Pemakaian di Discord: !profile atau !stats
         """
         player = database.get_player(ctx.author.id)
@@ -49,6 +50,11 @@ class ProfileCog(commands.Cog):
             # rig_level 1 -> index 0 di RIG_TIERS, dst.
             rig_name = config.RIG_TIERS[player["rig_level"] - 1]["name"]
 
+        # --- CEK STATUS JAIL ---
+        # Kalau player sedang dalam masa karantina (habis arrested),
+        # tampilkan sebagai field tambahan yang mencolok di embed.
+        jail_status = database.is_jailed(ctx.author.id)
+
         embed = discord.Embed(
             title=f"🕵️ Profil Hacker: {ctx.author.display_name}",
             color=discord.Color.dark_purple(),
@@ -62,6 +68,26 @@ class ProfileCog(commands.Cog):
             name="Heat", value=f"`{heat}/100` - {heat_status}", inline=False
         )
         embed.add_field(name="Hardware", value=f"`{rig_name}`", inline=False)
+
+        # Field status jail hanya muncul kalau player memang sedang jailed,
+        # supaya embed tidak "berisik" untuk player yang statusnya normal.
+        if jail_status["jailed"]:
+            remaining = jail_status["seconds_remaining"]
+            minutes, seconds = divmod(remaining, 60)
+            time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+
+            embed.add_field(
+                name="🔒 Status Karantina",
+                value=(
+                    f"**DALAM PENGAWASAN** - tidak bisa `!hack`\n"
+                    f"Sisa waktu: **{time_str}**"
+                ),
+                inline=False,
+            )
+            # Ubah warna embed jadi merah kalau sedang jailed, biar langsung
+            # kelihatan mencolok dari warna default ungu.
+            embed.color = discord.Color.red()
+
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
 
         await ctx.send(embed=embed)
