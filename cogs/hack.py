@@ -32,19 +32,36 @@ class HackCog(commands.Cog):
         # Pastikan player terdaftar di database
         player = database.get_player(user_id)
 
-        # Cek dulu apakah heat saat ini sudah di ambang batas maksimal (100)
-        # Jika player nekat hack saat heat sudah 100, langsung digerebek tanpa dapet hasil!
-        if player["heat"] >= config.HEAT_MAX:
-            heat_result = database.add_heat(user_id, 0) # Trigger reset & denda dari database
-            
+        # --- CEK STATUS JAIL (cooldown 5 menit setelah arrested) ---
+        # Ini WAJIB dicek paling awal, sebelum logic hack lainnya jalan.
+        # Player yang baru saja digerebek (heat mencapai 100) tidak boleh
+        # langsung !hack lagi walaupun heat mereka sudah direset ke 0/100,
+        # karena statusnya masih "dalam pengawasan" selama JAIL_COOLDOWN_SECONDS.
+        jail_status = database.is_jailed(user_id)
+        if jail_status["jailed"]:
+            # Reset cooldown 4 detik biasa, supaya player tidak kena double
+            # penalti (cooldown normal + cooldown jail) untuk aksi yang gagal ini.
+            ctx.command.reset_cooldown(ctx)
+
+            remaining = jail_status["seconds_remaining"]
+            minutes, seconds = divmod(remaining, 60)
+            time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+
             jail_embed = discord.Embed(
-                title="🚨 CEROBOH! SERVER TERLACAK & DIGEREBEK!",
-                description=f"Sial, {ctx.author.mention}! Heat kamu sudah mentok di **100/100** tapi kamu masih nekat nge-hack. Tim Cyber Crime langsung mendobrak pintu rumahmu!",
-                color=discord.Color.red()
+                title="🔒 STATUS: DALAM PENGAWASAN",
+                description=(
+                    f"Sabar dulu, {ctx.author.mention}! Kamu baru saja digerebek dan "
+                    f"masih dalam masa investigasi pihak berwenang. Semua aktivitas "
+                    f"hacking-mu sedang dipantau ketat."
+                ),
+                color=discord.Color.red(),
             )
-            jail_embed.add_field(name="💸 Denda Penyitaan", value=f"-{heat_result['fine']:,} Bytes disita oleh pihak berwenang.", inline=False)
-            jail_embed.add_field(name="🛡️ Status Karantina", value="Aksi gagal total! Hardware disita sementara dan Heat di-reset ke `0/100`.", inline=False)
-            jail_embed.set_footer(text="Gunakan !clean secara berkala sebelum heat penuh!")
+            jail_embed.add_field(
+                name="⏳ Sisa Waktu Karantina", value=f"**{time_str}**", inline=False
+            )
+            jail_embed.set_footer(
+                text="Tunggu sampai status karantina berakhir sebelum !hack lagi."
+            )
             await ctx.send(embed=jail_embed)
             return
 
@@ -55,7 +72,7 @@ class HackCog(commands.Cog):
         # 2. Masukkan ke database
         database.add_bytes(user_id, earned_bytes)
         xp_result = database.add_xp(user_id, earned_xp)
-        
+
         # 3. Tambah Heat
         heat_result = database.add_heat(user_id, config.HEAT_GAIN_PER_HACK)
         new_heat = heat_result["heat"]
@@ -66,7 +83,7 @@ class HackCog(commands.Cog):
             "Sistem Parkir Otomatis Minimarket",
             "Database Lokal RT/RW",
             "ATM Rusak di Ujung Jalan",
-            "Server Gudang Toko Online"
+            "Server Gudang Toko Online",
         ]
         target_name = random.choice(targets)
 
@@ -74,16 +91,16 @@ class HackCog(commands.Cog):
         embed = discord.Embed(
             title="💻 Infiltrasi Berhasil!",
             description=f"Berhasil meretas **{target_name}**!",
-            color=discord.Color.green()
+            color=discord.Color.green(),
         )
         embed.add_field(name="💰 Bytes Didapat", value=f"+{earned_bytes:,} Bytes", inline=True)
         embed.add_field(name="⚡ XP Didapat", value=f"+{earned_xp} XP", inline=True)
-        
+
         # Indikator Heat dengan peringatan jika mendekati zona merah
         heat_warning = ""
         if new_heat >= config.HEAT_DANGER_THRESHOLD:
             heat_warning = "\n⚠️ **PERINGATAN: Heat tinggi! Segera jalankan `!clean`!**"
-        
+
         embed.add_field(name="🔥 Heat Level", value=f"{new_heat}/100{heat_warning}", inline=False)
         embed.set_footer(text=f"Hacker: {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
 
@@ -94,10 +111,21 @@ class HackCog(commands.Cog):
             jail_embed = discord.Embed(
                 title="🚨 SERVER TERLACAK - ANDA DIGEREBEK!",
                 description=f"Sial, {ctx.author.mention}! Heat kamu mencapai **100/100**. Tim Cyber Crime berhasil melacak lokasimu!",
-                color=discord.Color.red()
+                color=discord.Color.red(),
             )
-            jail_embed.add_field(name="💸 Denda Penyitaan", value=f"-{heat_result['fine']:,} Bytes disita oleh pihak berwenang.", inline=False)
-            jail_embed.add_field(name="🛡️ Status Karantina", value="Hardware diputus sementara. Heat di-reset ke `0/100`.", inline=False)
+            jail_embed.add_field(
+                name="💸 Denda Penyitaan",
+                value=f"-{heat_result['fine']:,} Bytes disita oleh pihak berwenang.",
+                inline=False,
+            )
+            jail_embed.add_field(
+                name="🛡️ Status Karantina",
+                value=(
+                    "Hardware diputus sementara. Heat di-reset ke `0/100`.\n"
+                    f"Kamu tidak bisa `!hack` selama **{config.JAIL_COOLDOWN_SECONDS // 60} menit**."
+                ),
+                inline=False,
+            )
             jail_embed.set_footer(text="Hati-hati ke depannya. Jangan lupa !clean sebelum heat mentok!")
             await ctx.send(embed=jail_embed)
 
@@ -106,7 +134,7 @@ class HackCog(commands.Cog):
             level_embed = discord.Embed(
                 title="🎉 LEVEL UP!",
                 description=f"Hebat, {ctx.author.mention}! Kamu naik dari Level **{xp_result['old_level']}** ➡️ **{xp_result['new_level']}**!",
-                color=discord.Color.gold()
+                color=discord.Color.gold(),
             )
             await ctx.send(embed=level_embed)
 
