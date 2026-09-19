@@ -40,7 +40,7 @@ class CleanCog(commands.Cog):
 
         # Tentukan biaya pembersihan berdasarkan seberapa tinggi heat saat ini
         # Contoh: Heat 50 = 100 Bytes (dihitung dari config atau rumus dinamis)
-        cleaning_cost = current_heat * 2.2 
+        cleaning_cost = int(current_heat * 2.5)
 
         if player["bytes"] < cleaning_cost:
             # Penting: Reset cooldown jika gagal bayar
