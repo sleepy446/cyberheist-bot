@@ -63,9 +63,22 @@ def get_connection():
     Context manager untuk membuka koneksi SQLite dengan aman.
     Menggunakan 'with get_connection() as conn:' otomatis menutup
     koneksi setelah selesai, walaupun terjadi error di tengah jalan.
+
+    timeout=10 membuat SQLite otomatis MENUNGGU (retry) sampai 10 detik
+    kalau file sedang dipakai proses lain, alih-alih langsung melempar
+    error 'database is locked'. Ini jaring pengaman tambahan, TAPI kalau
+    ada aplikasi lain (seperti DB Browser for SQLite) yang membuka file
+    ini dalam mode write/edit dalam waktu lama, error tetap bisa muncul
+    setelah 10 detik menunggu - jadi tetap hindari membuka DB Browser
+    bersamaan saat bot sedang berjalan.
     """
-    conn = sqlite3.connect(config.DATABASE_PATH)
+    conn = sqlite3.connect(config.DATABASE_PATH, timeout=10)
     conn.row_factory = sqlite3.Row  # biar hasil query bisa diakses seperti dict
+    # WAL (Write-Ahead Logging) mode: memungkinkan operasi baca dan tulis
+    # berjalan bersamaan dengan jauh lebih toleran dibanding mode default,
+    # cocok untuk aplikasi seperti bot Discord yang banyak command jalan
+    # nyaris bersamaan dari berbagai user.
+    conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
     finally:
@@ -117,6 +130,22 @@ def add_bytes(user_id: int, amount: int):
         conn.commit()
 
 
+def set_bytes(user_id: int, amount: int):
+    """
+    Mengatur Bytes player LANGSUNG ke nilai tertentu (bukan menambah).
+    Dipakai oleh command admin !setbytes untuk keperluan testing,
+    misal set ke angka pas 10000 buat tes fitur !shop.
+    """
+    get_player(user_id)  # pastikan row sudah ada
+    amount = max(0, amount)  # Bytes tidak boleh negatif
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET bytes = ? WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+
+
 # =========================================================
 # PLAYER: XP & LEVEL
 # =========================================================
@@ -162,6 +191,23 @@ def add_xp(user_id: int, amount: int) -> dict:
         "new_level": current_level,
         "current_xp": current_xp,
     }
+
+
+def set_level(user_id: int, level: int, xp: int = 0):
+    """
+    Mengatur Level dan XP player LANGSUNG ke nilai tertentu.
+    Dipakai oleh command admin !setlevel untuk keperluan testing,
+    misal lompat ke level 50 buat cek balancing XP curve di level tinggi.
+    """
+    get_player(user_id)  # pastikan row sudah ada
+    level = max(1, level)  # Level minimal 1
+    xp = max(0, xp)
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET level = ?, xp = ? WHERE user_id = ?",
+            (level, xp, user_id),
+        )
+        conn.commit()
 
 
 # =========================================================
@@ -280,6 +326,23 @@ def is_jailed(user_id: int) -> dict:
     return {"jailed": False, "seconds_remaining": 0}
 
 
+def set_heat(user_id: int, value: int):
+    """
+    Mengatur Heat player LANGSUNG ke nilai tertentu (0-100), TANPA
+    memicu logic arrested/jail seperti add_heat(). Murni untuk admin
+    override saat testing, misal set heat ke 65 buat cek tampilan
+    status "Waspada" di !profile tanpa harus grinding !hack berkali-kali.
+    """
+    get_player(user_id)  # pastikan row sudah ada
+    value = max(config.HEAT_MIN, min(config.HEAT_MAX, value))
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET heat = ? WHERE user_id = ?",
+            (value, user_id),
+        )
+        conn.commit()
+
+
 # =========================================================
 # PLAYER: RIG LEVEL
 # =========================================================
@@ -309,3 +372,55 @@ def get_leaderboard(limit: int = 10):
             "SELECT * FROM players ORDER BY bytes DESC LIMIT ?", (limit,)
         ).fetchall()
         return rows
+
+
+# =========================================================
+# ADMIN / MAINTENANCE
+# =========================================================
+
+def reset_player(user_id: int):
+    """
+    Menghapus SELURUH data player dari database (kembali ke kondisi
+    seolah belum pernah main sama sekali). Dipakai oleh command admin
+    !resetplayer untuk keperluan testing dari kondisi "player baru".
+
+    Row akan otomatis dibuat ulang dengan nilai default (bytes=0,
+    level=1, dst) di panggilan get_player() berikutnya.
+    """
+    with get_connection() as conn:
+        conn.execute("DELETE FROM players WHERE user_id = ?", (user_id,))
+        conn.commit()
+
+
+def get_economy_stats() -> dict:
+    """
+    Mengambil ringkasan statistik ekonomi server: total player terdaftar,
+    total Bytes yang beredar, rata-rata level, dan rata-rata Bytes.
+    Dipakai oleh command admin !dbstats untuk memantau kesehatan
+    balancing game secara keseluruhan (misal: apakah Bytes terlalu
+    mudah didapat, apakah rata-rata level wajar, dst).
+
+    Return dict:
+        {
+            "total_players": int,
+            "total_bytes": int,
+            "avg_level": float,
+            "avg_bytes": float,
+        }
+    """
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT
+                COUNT(*) AS total_players,
+                COALESCE(SUM(bytes), 0) AS total_bytes,
+                COALESCE(AVG(level), 0) AS avg_level,
+                COALESCE(AVG(bytes), 0) AS avg_bytes
+            FROM players
+        """).fetchone()
+
+        return {
+            "total_players": row["total_players"],
+            "total_bytes": row["total_bytes"],
+            "avg_level": round(row["avg_level"], 1),
+            "avg_bytes": round(row["avg_bytes"], 1),
+        }
