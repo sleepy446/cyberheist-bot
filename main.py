@@ -46,6 +46,7 @@ INITIAL_EXTENSIONS = [
     "cogs.shop",
     "cogs.net",
     "cogs.clean",
+    "cogs.admin",
 ]
 
 
@@ -81,7 +82,7 @@ async def ping(ctx: commands.Context):
     Contoh pemakaian di Discord: !ping
     """
     latency_ms = round(bot.latency * 1000)
-    await ctx.send(f"🏓 Pong! Latency: {latency_ms}ms")
+    await ctx.send(f"Pong! Latency: {latency_ms}ms")
 
 
 # --- Jalankan Bot ---

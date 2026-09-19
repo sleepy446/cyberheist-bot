@@ -241,6 +241,22 @@ def add_heat(user_id: int, amount: int) -> dict:
     }
 
 
+def clear_jail(user_id: int):
+    """
+    Membatalkan status jail player secara instan (set jail_until = 0).
+    Dipakai oleh command admin !unjail untuk keperluan testing/moderasi,
+    supaya tidak perlu edit database manual via GUI (yang rawan human
+    error dan berisiko bikin file ter-lock saat bot sedang berjalan).
+    """
+    get_player(user_id)  # pastikan row sudah ada
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET jail_until = 0 WHERE user_id = ?",
+            (user_id,),
+        )
+        conn.commit()
+
+
 def is_jailed(user_id: int) -> dict:
     """
     Mengecek apakah player masih dalam status "jailed" (cooldown
