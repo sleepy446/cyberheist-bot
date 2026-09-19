@@ -9,6 +9,7 @@ Tujuannya: kalau nanti kita ganti struktur tabel, cukup ubah di sini.
 
 import sqlite3
 import os
+import time
 from contextlib import contextmanager
 
 import config
@@ -18,6 +19,9 @@ def init_db():
     """
     Membuat folder data/ (kalau belum ada) dan tabel `players`
     (kalau belum ada). Dipanggil sekali saat bot pertama kali start.
+    Juga menjalankan migration ringan untuk menambah kolom baru
+    (jail_until) ke tabel yang sudah ada sebelumnya, tanpa menghapus
+    data player yang sudah tersimpan.
     """
     os.makedirs(os.path.dirname(config.DATABASE_PATH), exist_ok=True)
 
@@ -29,10 +33,26 @@ def init_db():
                 level       INTEGER NOT NULL DEFAULT 1,
                 xp          INTEGER NOT NULL DEFAULT 0,
                 heat        INTEGER NOT NULL DEFAULT 0,
-                rig_level   INTEGER NOT NULL DEFAULT 0
+                rig_level   INTEGER NOT NULL DEFAULT 0,
+                jail_until  INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.commit()
+
+        # --- Migration: tambah kolom jail_until kalau tabel lama belum punya ---
+        # Ini penting karena tabel `players` di database kamu sudah ada isinya
+        # (dibuat sebelum kolom ini ditambahkan). CREATE TABLE IF NOT EXISTS
+        # di atas TIDAK akan menambah kolom baru ke tabel yang sudah ada,
+        # jadi kita cek manual dan ALTER TABLE kalau perlu.
+        existing_columns = [
+            row["name"] for row in conn.execute("PRAGMA table_info(players)")
+        ]
+        if "jail_until" not in existing_columns:
+            conn.execute(
+                "ALTER TABLE players ADD COLUMN jail_until INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.commit()
+            print("[DB] Migration: kolom 'jail_until' berhasil ditambahkan.")
 
     print("[DB] Database siap. Tabel 'players' sudah ada/dibuat.")
 
@@ -152,14 +172,21 @@ def add_heat(user_id: int, amount: int) -> dict:
     """
     Menambah (atau mengurangi jika amount negatif) Heat player,
     dengan clamp otomatis ke range [HEAT_MIN, HEAT_MAX].
+
     Jika Heat mencapai 100, player terkena penalti (gerebek/jail):
-    Bytes disita sebagian dan Heat di-reset ke 0.
-    
+      - Heat di-reset ke 0
+      - Bytes disita sebagian (HEAT_ARREST_FINE_PERCENTAGE dari total,
+        minimal HEAT_ARREST_FINE_MINIMUM)
+      - Player masuk status "jailed" selama JAIL_COOLDOWN_SECONDS detik
+        (disimpan sebagai timestamp di kolom jail_until), sehingga
+        tidak bisa !hack sampai cooldown ini berakhir.
+
     Return dict berisi informasi heat terbaru dan status penalti:
         {
             "heat": int,
             "arrested": bool,
-            "fine": int
+            "fine": int,
+            "jail_until": int   # unix timestamp, 0 kalau tidak arrested
         }
     """
     player = get_player(user_id)
@@ -168,26 +195,36 @@ def add_heat(user_id: int, amount: int) -> dict:
 
     arrested = False
     fine = 0
+    jail_until = player["jail_until"]
 
     # Jika Heat menyentuh atau melewati batas maksimal (100)
     if new_heat >= config.HEAT_MAX:
         arrested = True
         new_heat = 0  # Reset heat setelah tertangkap
-        
-        # Penalti denda: sita 20% dari total Bytes player (minimal 50 Bytes kalau punya)
+
+        # Penalti denda: sita persentase dari total Bytes player
+        # (minimal HEAT_ARREST_FINE_MINIMUM Bytes kalau punya)
         current_bytes = player["bytes"]
         if current_bytes > 0:
-            fine = max(50, round(current_bytes * 0.20))
+            fine = max(
+                config.HEAT_ARREST_FINE_MINIMUM,
+                round(current_bytes * config.HEAT_ARREST_FINE_PERCENTAGE),
+            )
             # Pastikan denda tidak melebihi bytes yang dimiliki
             fine = min(fine, current_bytes)
+
+        # Set cooldown: player tidak bisa !hack sampai waktu ini
+        jail_until = int(time.time()) + config.JAIL_COOLDOWN_SECONDS
     else:
         new_heat = max(config.HEAT_MIN, min(config.HEAT_MAX, new_heat))
 
     with get_connection() as conn:
-        if arrested and fine > 0:
+        if arrested:
             conn.execute(
-                "UPDATE players SET heat = ?, bytes = bytes - ? WHERE user_id = ?",
-                (new_heat, fine, user_id),
+                """UPDATE players
+                   SET heat = ?, bytes = bytes - ?, jail_until = ?
+                   WHERE user_id = ?""",
+                (new_heat, fine, jail_until, user_id),
             )
         else:
             conn.execute(
@@ -199,8 +236,32 @@ def add_heat(user_id: int, amount: int) -> dict:
     return {
         "heat": new_heat,
         "arrested": arrested,
-        "fine": fine
+        "fine": fine,
+        "jail_until": jail_until if arrested else 0,
     }
+
+
+def is_jailed(user_id: int) -> dict:
+    """
+    Mengecek apakah player masih dalam status "jailed" (cooldown
+    setelah arrested). Dipanggil oleh command seperti !hack SEBELUM
+    mengizinkan aksi, supaya player tidak bisa hack selama masih
+    dalam masa tahanan.
+
+    Return dict:
+        {
+            "jailed": bool,
+            "seconds_remaining": int   # 0 kalau tidak jailed
+        }
+    """
+    player = get_player(user_id)
+    jail_until = player["jail_until"]
+    now = int(time.time())
+
+    if jail_until > now:
+        return {"jailed": True, "seconds_remaining": jail_until - now}
+
+    return {"jailed": False, "seconds_remaining": 0}
 
 
 # =========================================================

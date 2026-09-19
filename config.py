@@ -46,6 +46,18 @@ HEAT_DANGER_THRESHOLD = 70
 # Heat yang dikurangi setiap kali !clean berhasil
 HEAT_REDUCTION_PER_CLEAN = 25
 
+# --- Penalti saat Heat mencapai 100 (arrested/gerebek) ---
+# Persentase Bytes yang disita sebagai denda saat tertangkap.
+HEAT_ARREST_FINE_PERCENTAGE = 0.35  # 35% dari total Bytes
+
+# Denda minimum tetap dikenakan walau Bytes player sedikit,
+# supaya penalti tetap terasa bahkan di awal game.
+HEAT_ARREST_FINE_MINIMUM = 50
+
+# Berapa lama (detik) player tidak bisa !hack setelah arrested.
+# 300 detik = 5 menit.
+JAIL_COOLDOWN_SECONDS = 300
+
 
 # =========================================================
 # HARDWARE / RIG TIERS (untuk !shop dan !rig)
