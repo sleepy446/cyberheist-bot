@@ -1,150 +1,169 @@
-# 🕵️ CyberHeist Bot
+# CyberHeist Bot
 
-**CyberHeist Bot** adalah bot Discord idle/incremental game dengan tema peretasan siber. Player bisa:
-- 💻 Meretas server kecil untuk mendapat **Bytes** (currency) dan **XP**
-- 🔥 Mengelola **Heat** (tingkat buronan) sebelum tertangkap
-- ⚙️ Membeli **hardware/rig** untuk passive income
-- 📊 Bersaing di **leaderboard** global
+A Discord idle/incremental game bot with a cybercrime theme. Players hack servers, manage their heat level, upgrade hardware for passive income, and compete on a global leaderboard.
 
----
+## Features
 
-## 🚀 Setup & Installation
+- Manual grinding via hacking command with random rewards
+- Heat system with arrest mechanics and jail time
+- Hardware/rig upgrades for passive income
+- XP and leveling with exponential scaling
+- Global leaderboard across all servers
+- Admin tools for testing and moderation
 
-### 1. Clone Repository
+## Requirements
+
+- Python 3.8 or higher
+- Discord bot token with Message Content Intent enabled
+- SQLite3 (included with Python)
+
+## Installation
+
+### 1. Clone the repository
+
 ```bash
-git clone <repo-url>
+git clone https://github.com/sleepy446/cyberheist-bot.git
 cd cyberheist-bot
 ```
 
-### 2. Install Dependencies
+### 2. Set up virtual environment
+
 ```bash
 python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Setup Discord Bot Token
-1. Pergi ke [Discord Developer Portal](https://discord.com/developers/applications)
-2. Buat aplikasi baru → Tab "Bot" → Copy token
-3. Aktifkan **Message Content Intent** di tab "Bot"
-4. Copy file `.env.example` jadi `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-5. Edit `.env` dan isi token kamu:
-   ```env
-   DISCORD_TOKEN=your_actual_token_here
-   ```
+### 3. Configure environment variables
 
-### 4. Invite Bot ke Server
-1. Tab "OAuth2" → "URL Generator"
-2. Pilih scope: `bot` dan `applications.commands`
-3. Pilih permissions: `Send Messages`, `Embed Links`, `Read Message History`
-4. Copy URL dan buka di browser untuk invite bot
+Copy the example file and edit it with your bot token:
 
-### 5. Jalankan Bot
+```bash
+cp .env.example .env
+nano .env  # or use your preferred editor
+```
+
+Add your Discord bot token:
+
+```env
+DISCORD_TOKEN=your_actual_token_here
+```
+
+### 4. Create Discord application
+
+1. Go to https://discord.com/developers/applications
+2. Create a new application
+3. Navigate to the "Bot" tab and create a bot
+4. Copy the token and paste it into your `.env` file
+5. Enable "Message Content Intent" under Privileged Gateway Intents
+6. Go to OAuth2 > URL Generator
+7. Select scopes: `bot` and `applications.commands`
+8. Select bot permissions: `Send Messages`, `Embed Links`, `Read Message History`
+9. Use the generated URL to invite the bot to your server
+
+### 5. Run the bot
+
 ```bash
 python main.py
 ```
 
-Jika berhasil, kamu akan lihat log:
+If successful, you should see:
+
 ```
 [2026-09-20 12:00:00] [ INFO   ] __main__: Bot berhasil online sebagai: YourBotName#1234
 [2026-09-20 12:00:00] [ INFO   ] __main__: CyberHeist Bot siap menerima command!
 ```
 
----
+## Commands
 
-## 🎮 Player Commands
+### Player Commands
 
-| Command | Aliases | Deskripsi |
-|---------|---------|-----------|
-| `!hack` | - | Meretas target random untuk dapet Bytes & XP (cooldown: 4 detik) |
-| `!profile` | `!stats` | Lihat status player: Level, Bytes, XP, Heat, Rig |
-| `!leaderboard` | `!lb`, `!top` | Papan peringkat top 10 hacker terkaya |
-| `!shop` | `!blackmarket`, `!store` | Lihat daftar hardware/rig yang bisa dibeli |
-| `!buy <tier>` | - | Beli hardware (contoh: `!buy 1`) |
-| `!net` | `!mine`, `!claim` | Klaim passive income dari rig (cooldown: 5 menit) |
-| `!clean` | `!wash`, `!laylow` | Kurangi Heat dengan bayar Bytes (cooldown: 3 menit) |
-| `!help` | - | Tampilkan list command |
-| `!ping` | - | Tes koneksi bot |
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `!hack` | - | Hack a random target for Bytes and XP (4 second cooldown) |
+| `!profile` | `!stats` | View your stats: level, Bytes, XP, Heat, and hardware |
+| `!leaderboard` | `!lb`, `!top` | Show top 10 wealthiest hackers |
+| `!shop` | `!blackmarket`, `!store` | View available hardware for purchase |
+| `!buy <tier>` | - | Purchase hardware (example: `!buy 1`) |
+| `!net` | `!mine`, `!claim` | Claim passive income from your rig (5 minute cooldown) |
+| `!clean` | `!wash`, `!laylow` | Reduce Heat by paying Bytes (3 minute cooldown) |
+| `!help` | - | Display list of player commands |
+| `!ping` | - | Check bot latency |
 
----
+### Admin Commands
 
-## 🔧 Admin Commands
+Available only to the bot owner (the account that created the Discord application).
 
-**Catatan:** Command ini HANYA bisa digunakan oleh Owner bot (akun yang membuat Discord Application).
+| Command | Description |
+|---------|-------------|
+| `!ahelp` | View all admin commands |
+| `!unjail @user` | Remove jail status from a player |
+| `!addbytes @user <amount>` | Add or subtract Bytes (negative values allowed) |
+| `!setbytes @user <amount>` | Set player Bytes to a specific value |
+| `!addxp @user <amount>` | Add XP to a player (auto-processes level ups) |
+| `!setlevel @user <level>` | Set player level directly |
+| `!setheat @user <0-100>` | Set player Heat without triggering jail |
+| `!setrig @user <tier>` | Set player rig level directly |
+| `!resetplayer @user confirm` | Delete all player data (requires confirmation) |
+| `!playerinfo [@user]` | View raw database data for a player |
+| `!dbstats` | View economy statistics (total players, Bytes, etc) |
+| `!reload <cog_name>` | Reload a cog without restarting the bot |
 
-| Command | Deskripsi |
-|---------|-----------|
-| `!ahelp` | Lihat semua admin command |
-| `!unjail @user` | Batalkan status jail player |
-| `!addbytes @user <amount>` | Tambah/kurangi Bytes player |
-| `!setbytes @user <amount>` | Set Bytes player langsung |
-| `!addxp @user <amount>` | Tambah XP player (auto level up) |
-| `!setlevel @user <level>` | Set Level player langsung |
-| `!setheat @user <0-100>` | Set Heat player (tanpa trigger jail) |
-| `!setrig @user <tier>` | Set rig_level player |
-| `!resetplayer @user confirm` | Hapus SEMUA data player |
-| `!playerinfo [@user]` | Lihat raw data player dari database |
-| `!dbstats` | Statistik ekonomi server (total player, Bytes, dll) |
-| `!reload <cog_name>` | Reload cog tanpa restart bot (dev tool) |
+## Game Mechanics
 
----
+### Currency: Bytes
 
-## ⚙️ Game Mechanics
+- Earned from `!hack` (20-60 per hack) and `!net` (depends on rig tier)
+- Used to purchase hardware and pay for `!clean`
+- Can be confiscated during arrest (35% of total)
 
-### 💰 Bytes (Currency)
-- Didapat dari `!hack` (20-60 per hack) dan `!net` (tergantung rig tier)
-- Digunakan untuk beli hardware dan bayar `!clean`
-- Bisa disita saat arrested (35% dari total)
+### XP and Leveling
 
-### ⚡ XP & Leveling
-- Didapat dari `!hack` (15-35 XP per hack)
-- XP requirement naik eksponensial: `50 * (level ^ 1.5)`
-- Level meningkatkan biaya `!clean` tapi juga prestige
+- Gained from `!hack` (15-35 XP per hack)
+- XP requirement increases exponentially: `50 * (level ^ 1.5)`
+- Higher level increases `!clean` cost but also prestige
 
-### 🔥 Heat System
-- Setiap `!hack` menambah **+8 Heat**
-- Heat > 70 = risiko gagal hack naik ke **35%**
-- Heat mencapai 100 = **ARRESTED**:
-  - Bytes disita 35% (min 50 Bytes)
-  - Tidak bisa `!hack` selama 5 menit
-  - Heat reset ke 0
-- Heat decay pasif: **-5 poin/menit** otomatis
+### Heat System
 
-### ⚙️ Hardware/Rig Tiers
-| Tier | Nama | Harga | Passive Income (per `!net`) |
-|------|------|-------|------------------------------|
-| 1 | Botnet Kecil | 500 Bytes | +5 Bytes |
+- Every successful `!hack` adds +8 Heat
+- Heat above 70 increases hack failure chance to 35%
+- Reaching 100 Heat triggers arrest:
+  - 35% of Bytes confiscated (minimum 50 Bytes)
+  - Cannot hack for 5 minutes
+  - Heat reset to 0
+- Passive decay: -5 Heat per minute automatically
+
+### Hardware Tiers
+
+| Tier | Name | Price | Passive Income per `!net` |
+|------|------|-------|---------------------------|
+| 1 | Botnet Kecil | 450 Bytes | +5 Bytes |
 | 2 | GPU Rig | 2,500 Bytes | +30 Bytes |
 | 3 | Server Rack | 10,000 Bytes | +150 Bytes |
 
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 cyberheist-bot/
-├── main.py              # Entry point bot
-├── config.py            # Balancing & game constants
+├── main.py              # Bot entry point
+├── config.py            # Game balancing constants
 ├── database.py          # Database layer (SQLite)
 ├── logger.py            # Logging configuration
 ├── requirements.txt     # Python dependencies
-├── .env                 # Token (JANGAN commit!)
-├── .env.example         # Template untuk .env
+├── .env                 # Environment variables (not committed)
+├── .env.example         # Environment variable template
 ├── .gitignore           # Git ignore rules
-├── README.md            # Dokumentasi (file ini)
+├── README.md            # This file
 ├── changelog.md         # Development notes
 ├── cogs/                # Command modules
 │   ├── __init__.py
-│   ├── hack.py          # !hack command
-│   ├── profile.py       # !profile, !leaderboard
-│   ├── shop.py          # !shop, !buy
-│   ├── net.py           # !net command
-│   ├── clean.py         # !clean command
+│   ├── hack.py          # Hack command
+│   ├── profile.py       # Profile and leaderboard
+│   ├── shop.py          # Shop and buy commands
+│   ├── net.py           # Passive income claim
+│   ├── clean.py         # Heat reduction
 │   ├── admin.py         # Admin commands
-│   ├── help.py          # !help, !ahelp
+│   ├── help.py          # Help commands
 │   └── tasks.py         # Background tasks (heat decay)
 ├── data/                # Database files
 │   └── cyberheist.sqlite3
@@ -152,50 +171,85 @@ cyberheist-bot/
     └── cyberheist.log
 ```
 
----
+## Configuration
 
-## 🐛 Known Issues & Fixes
+All game balancing values are stored in `config.py`:
 
-✅ **FIXED (2026-09-20):**
-- Race condition di database operations
-- Bytes bisa jadi negatif
-- Shop hardcode vs config mismatch
-- Help command detection fragile
-- Clean footer salah tulis cooldown
-- Tidak ada global error handler
-- Database path relatif ke CWD
+- XP curve parameters
+- Heat gain/reduction rates
+- Arrest penalties
+- Hardware tier prices and income
+- Cooldown durations
 
-📋 **Planned Features:** Lihat `CYBERHEIST_FEATURE_SUGGESTIONS.txt` di home directory
+Modify these values to rebalance the game without touching the core logic.
 
----
+## Logging
 
-## 🔐 Security Notes
+The bot uses a rotating file handler that:
 
-- **JANGAN** commit file `.env` ke Git (sudah ada di `.gitignore`)
-- **JANGAN** share Discord bot token ke siapapun
-- Kalau token bocor, regenerate di Discord Developer Portal
-- Database (`data/*.sqlite3`) juga di-gitignore untuk privasi player
+- Writes logs to `logs/cyberheist.log`
+- Rotates at 5MB with 5 backup files (max 25MB total)
+- Outputs INFO level and above to console
+- Outputs DEBUG level and above to file
 
----
+## Security Notes
 
-## 🤝 Contributing
+- Never commit your `.env` file to version control
+- Never share your Discord bot token
+- If your token is compromised, regenerate it in the Discord Developer Portal
+- Database files (`data/*.sqlite3`) are gitignored to protect player privacy
 
-1. Fork repository
-2. Buat branch baru: `git checkout -b feature/nama-fitur`
-3. Commit changes: `git commit -m "Add: fitur X"`
-4. Push ke branch: `git push origin feature/nama-fitur`
-5. Buat Pull Request
+## Database
 
----
+The bot uses SQLite with a single `players` table. Data is global (one wallet per Discord user ID) across all servers.
 
-## 📝 License
+### Schema
 
-Project ini dibuat untuk pembelajaran dan fun. Silakan modifikasi sesuai kebutuhan.
+```sql
+CREATE TABLE players (
+    user_id     INTEGER PRIMARY KEY,
+    bytes       INTEGER NOT NULL DEFAULT 0,
+    level       INTEGER NOT NULL DEFAULT 1,
+    xp          INTEGER NOT NULL DEFAULT 0,
+    heat        INTEGER NOT NULL DEFAULT 0,
+    rig_level   INTEGER NOT NULL DEFAULT 0,
+    jail_until  INTEGER NOT NULL DEFAULT 0
+);
+```
 
----
+## Development
 
-## 💬 Support
+### Hot Reload
 
-Jika ada bug atau pertanyaan, buka Issue di GitHub atau hubungi maintainer.
+Use the `!reload <cog_name>` command to reload a single cog without restarting the bot:
 
-**Happy Hacking! 🕵️‍♂️💻**
+```
+!reload hack
+!reload shop
+```
+
+### Adding New Commands
+
+1. Create or edit a file in `cogs/`
+2. Add the cog name to `INITIAL_EXTENSIONS` in `main.py`
+3. Use `!reload <cog_name>` to load it without restarting
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit your changes: `git commit -m "Add your feature"`
+4. Push to the branch: `git push origin feature/your-feature`
+5. Open a Pull Request
+
+## Known Issues
+
+All critical bugs have been fixed as of the latest commit. See changelog.md for details.
+
+## License
+
+This project is created for educational and entertainment purposes. Feel free to modify and use as needed.
+
+## Support
+
+For bugs or questions, open an issue on GitHub or contact the maintainer.
