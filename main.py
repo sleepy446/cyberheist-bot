@@ -34,7 +34,8 @@ intents.message_content = True
 
 # --- Inisialisasi Bot ---
 # command_prefix="!" sesuai rancangan GDD kita (semua command diawali tanda seru).
-bot = commands.Bot(command_prefix="!", intents=intents)
+# help_command=None menonaktifkan command help bawaan agar bisa kita buat versi custom.
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 # Daftar cog yang akan di-load otomatis saat bot start.
 # Format: "cogs.<nama_file_tanpa_.py>"
@@ -47,6 +48,8 @@ INITIAL_EXTENSIONS = [
     "cogs.net",
     "cogs.clean",
     "cogs.admin",
+    "cogs.help",
+    "cogs.tasks",
 ]
 
 

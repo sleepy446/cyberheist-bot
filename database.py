@@ -333,9 +333,10 @@ def set_rig_level(user_id: int, rig_level: int):
         conn.commit()
 
 
-# =========================================================
-# LEADERBOARD
-# =========================================================
+def get_players_with_heat() -> list:
+    """Mengambil semua player yang memiliki Heat > 0 untuk proses decay."""
+    with get_connection() as conn:
+        return conn.execute("SELECT user_id, heat FROM players WHERE heat > 0").fetchall()
 
 def get_leaderboard(limit: int = 10):
     """

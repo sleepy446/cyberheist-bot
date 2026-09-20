@@ -20,7 +20,7 @@ class CleanCog(commands.Cog):
         self.bot = bot
 
     @commands.command(name="clean", aliases=["wash", "laylow"])
-    @commands.cooldown(1, 60, commands.BucketType.user)  # Cooldown 1 menit per pembersihan
+    @commands.cooldown(1, config.CLEAN_COOLDOWN_SECONDS, commands.BucketType.user)  # Cooldown disesuaikan dari config
     async def clean(self, ctx: commands.Context):
         """
         Menurunkan tingkat Heat (buronan) player.
@@ -35,14 +35,14 @@ class CleanCog(commands.Cog):
             await ctx.send(f"🛡️ {ctx.author.mention}, jejak digitalmu sudah bersih total! Heat kamu di angka `0/100`.")
             return
 
-        # Biaya pembersihan berdasarkan seberapa tinggi heat saat ini
-        cleaning_cost = int(current_heat * 2.5)
+        # Biaya pembersihan: basis tetap + scaling berdasarkan level
+        cleaning_cost = config.CLEAN_BASE_COST + (player["level"] * config.CLEAN_SCALING_FACTOR)
 
         if player["bytes"] < cleaning_cost:
             ctx.command.reset_cooldown(ctx)
             await ctx.send(
                 f"❌ Bytes kamu tidak cukup untuk membayar jasa hacker VPN pembersih jejak!\n"
-                f"Butuh **{cleaning_cost:,} Bytes** (Heat kamu saat ini: `{current_heat}/100`). "
+                f"Butuh **{cleaning_cost:,} Bytes** (Level player: {player['level']}). "
                 f"Terus `!net` atau `!hack` dulu!"
             )
             return

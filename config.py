@@ -58,6 +58,13 @@ HEAT_ARREST_FINE_MINIMUM = 50
 # 300 detik = 5 menit.
 JAIL_COOLDOWN_SECONDS = 300
 
+# =========================================================
+# CLEAN SYSTEM
+# =========================================================
+CLEAN_COOLDOWN_SECONDS = 180  # 3 menit
+CLEAN_BASE_COST = 50
+CLEAN_SCALING_FACTOR = 10
+
 
 # =========================================================
 # HARDWARE / RIG TIERS (untuk !shop dan !rig)
