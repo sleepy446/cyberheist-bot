@@ -37,13 +37,15 @@ def init_db():
     with get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS players (
-                user_id     INTEGER PRIMARY KEY,
-                bytes       INTEGER NOT NULL DEFAULT 0,
-                level       INTEGER NOT NULL DEFAULT 1,
-                xp          INTEGER NOT NULL DEFAULT 0,
-                heat        INTEGER NOT NULL DEFAULT 0,
-                rig_level   INTEGER NOT NULL DEFAULT 0,
-                jail_until  INTEGER NOT NULL DEFAULT 0
+                user_id          INTEGER PRIMARY KEY,
+                bytes            INTEGER NOT NULL DEFAULT 0,
+                level            INTEGER NOT NULL DEFAULT 1,
+                xp               INTEGER NOT NULL DEFAULT 0,
+                heat             INTEGER NOT NULL DEFAULT 0,
+                rig_level        INTEGER NOT NULL DEFAULT 0,
+                jail_until       INTEGER NOT NULL DEFAULT 0,
+                last_daily_claim INTEGER NOT NULL DEFAULT 0,
+                daily_streak     INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.commit()
@@ -100,6 +102,24 @@ def init_db():
             conn.commit()
             logger.info("Migration: kolom 'jail_until' berhasil ditambahkan.")
 
+        # --- Migration 3: tambah kolom daily reward (last_daily_claim, daily_streak) ---
+        existing_columns = [
+            row["name"] for row in conn.execute("PRAGMA table_info(players)")
+        ]
+        if "last_daily_claim" not in existing_columns:
+            conn.execute(
+                "ALTER TABLE players ADD COLUMN last_daily_claim INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.commit()
+            logger.info("Migration: kolom 'last_daily_claim' berhasil ditambahkan.")
+
+        if "daily_streak" not in existing_columns:
+            conn.execute(
+                "ALTER TABLE players ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.commit()
+            logger.info("Migration: kolom 'daily_streak' berhasil ditambahkan.")
+
     logger.info("Database siap. Tabel 'players' sudah ada/dibuat.")
 
 
@@ -130,7 +150,7 @@ def get_player(user_id: int) -> sqlite3.Row:
     """
     Mengambil data player berdasarkan user_id (global, lintas server).
     Kalau player belum terdaftar, otomatis dibuatkan row baru dengan
-    nilai default.
+    nilai default. Thread-safe dengan INSERT OR IGNORE.
     """
     with get_connection() as conn:
         row = conn.execute(
@@ -138,8 +158,9 @@ def get_player(user_id: int) -> sqlite3.Row:
         ).fetchone()
 
         if row is None:
+            # INSERT OR IGNORE mencegah error jika thread lain sudah insert duluan
             conn.execute(
-                "INSERT INTO players (user_id) VALUES (?)", (user_id,)
+                "INSERT OR IGNORE INTO players (user_id) VALUES (?)", (user_id,)
             )
             conn.commit()
             row = conn.execute(
@@ -392,3 +413,131 @@ def get_economy_stats() -> dict:
             "avg_level": round(row["avg_level"], 1),
             "avg_bytes": round(row["avg_bytes"], 1),
         }
+
+
+# =========================================================
+# DAILY REWARD SYSTEM
+# =========================================================
+
+def get_daily_status(user_id: int) -> dict:
+    """
+    Mengecek status daily reward player: apakah bisa klaim hari ini,
+    streak saat ini, dan sisa waktu menuju reset UTC berikutnya.
+    """
+    player = get_player(user_id)
+    current_day = int(time.time()) // 86400
+    last_claim_day = player["last_daily_claim"]
+    current_streak = player["daily_streak"]
+
+    can_claim = last_claim_day < current_day
+    is_streak_continued = (last_claim_day == current_day - 1)
+    next_streak = (current_streak + 1) if is_streak_continued else 1
+
+    # Hitung sisa detik menuju reset UTC (00:00 UTC berikutnya)
+    next_reset_timestamp = (current_day + 1) * 86400
+    seconds_until_reset = next_reset_timestamp - int(time.time())
+
+    return {
+        "can_claim": can_claim,
+        "current_streak": current_streak,
+        "next_streak": next_streak,
+        "seconds_until_reset": seconds_until_reset,
+        "last_claim_day": last_claim_day,
+        "current_day": current_day,
+    }
+
+
+def claim_daily_reward(
+    user_id: int,
+    base_bytes: int,
+    streak_bonus: int,
+    bonus_type: str,
+    bonus_value: int
+) -> dict:
+    """
+    Melakukan klaim daily reward secara atomic. Mengembalikan dict dengan
+    status sukses/gagal dan detail reward yang diberikan.
+
+    bonus_type: "extra_bytes", "xp", "heat", "cipher"
+    bonus_value: nilai bonus sesuai tipe
+    """
+    get_player(user_id)
+    current_day = int(time.time()) // 86400
+
+    with get_connection() as conn:
+        # Hitung streak baru
+        daily_status = get_daily_status(user_id)
+        if not daily_status["can_claim"]:
+            return {"success": False, "reason": "already_claimed"}
+
+        new_streak = daily_status["next_streak"]
+
+        # Hitung total bytes yang akan ditambahkan
+        total_bytes_gain = base_bytes + streak_bonus
+
+        # Tambahkan bonus bytes jika tipe adalah extra_bytes atau cipher
+        if bonus_type in ["extra_bytes", "cipher"]:
+            total_bytes_gain += bonus_value
+
+        # Atomic update dengan conditional WHERE
+        cursor = conn.execute(
+            """UPDATE players
+               SET last_daily_claim = ?,
+                   daily_streak = ?,
+                   bytes = bytes + ?
+               WHERE user_id = ? AND last_daily_claim < ?""",
+            (current_day, new_streak, total_bytes_gain, user_id, current_day)
+        )
+
+        if cursor.rowcount == 0:
+            # Race condition: player lain sudah claim duluan
+            return {"success": False, "reason": "already_claimed"}
+
+        conn.commit()
+
+    # Proses bonus XP atau Heat reduction di luar transaksi atomic bytes
+    # (karena fungsi ini punya transaksi sendiri yang aman)
+    level_up_result = None
+    new_heat = None
+
+    if bonus_type == "xp":
+        level_up_result = add_xp(user_id, bonus_value)
+
+    elif bonus_type == "heat":
+        heat_result = add_heat(user_id, -bonus_value)
+        new_heat = heat_result["heat"]
+
+    return {
+        "success": True,
+        "base_bytes": base_bytes,
+        "streak_bonus": streak_bonus,
+        "bonus_type": bonus_type,
+        "bonus_value": bonus_value,
+        "total_bytes_gain": total_bytes_gain,
+        "new_streak": new_streak,
+        "level_up_result": level_up_result,
+        "new_heat": new_heat,
+    }
+
+
+def admin_reset_daily(user_id: int):
+    """Reset last_daily_claim ke 0 untuk testing (admin only)."""
+    get_player(user_id)
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET last_daily_claim = 0 WHERE user_id = ?",
+            (user_id,)
+        )
+        conn.commit()
+
+
+def admin_set_streak(user_id: int, streak: int):
+    """Set daily_streak ke nilai tertentu (admin only)."""
+    get_player(user_id)
+    streak = max(0, min(999999, streak))  # Bounds check
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE players SET daily_streak = ? WHERE user_id = ?",
+            (streak, user_id)
+        )
+        conn.commit()

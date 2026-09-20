@@ -82,6 +82,23 @@ class ProfileCog(commands.Cog):
             inline=False
         )
 
+        # Daily reward status
+        daily_status = database.get_daily_status(ctx.author.id)
+        if daily_status["can_claim"]:
+            daily_display = f"🎁 **Tersedia** - Gunakan `!daily`"
+        else:
+            seconds_remaining = daily_status["seconds_until_reset"]
+            hours, remainder = divmod(seconds_remaining, 3600)
+            minutes, _ = divmod(remainder, 60)
+            time_str = f"{hours}j {minutes}m" if hours > 0 else f"{minutes}m"
+            daily_display = f"✅ Sudah Diklaim (Reset: {time_str})"
+
+        embed.add_field(
+            name="🎁 Daily Reward",
+            value=f"🔥 Streak: **{daily_status['current_streak']} Hari**\n{daily_display}",
+            inline=False
+        )
+
         if jail_status["jailed"]:
             remaining = jail_status["seconds_remaining"]
             minutes, seconds = divmod(remaining, 60)

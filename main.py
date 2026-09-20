@@ -53,6 +53,7 @@ INITIAL_EXTENSIONS = [
     "cogs.admin",
     "cogs.help",
     "cogs.tasks",
+    "cogs.daily",
 ]
 
 

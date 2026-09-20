@@ -53,6 +53,8 @@ class AdminCog(commands.Cog):
         "playerinfo": "!playerinfo [@user]",
         "dbstats": "!dbstats",
         "reload": "!reload hack",
+        "resetdaily": "!resetdaily [@user]",
+        "setstreak": "!setstreak @user 5",
     }
 
     def __init__(self, bot: commands.Bot):
@@ -277,6 +279,8 @@ class AdminCog(commands.Cog):
         embed.add_field(name="heat", value=f"`{player['heat']}`", inline=True)
         embed.add_field(name="rig_level", value=f"`{player['rig_level']}`", inline=True)
         embed.add_field(name="jail_until (raw)", value=f"`{player['jail_until']}`", inline=True)
+        embed.add_field(name="last_daily_claim", value=f"`{player['last_daily_claim']}`", inline=True)
+        embed.add_field(name="daily_streak", value=f"`{player['daily_streak']}`", inline=True)
 
         if jail_status["jailed"]:
             embed.add_field(
@@ -292,6 +296,50 @@ class AdminCog(commands.Cog):
             value=f"`{int(time.time())}`",
             inline=False,
         )
+        await ctx.send(embed=embed)
+
+    # =====================================================
+    # DAILY REWARD OVERRIDE
+    # =====================================================
+
+    @commands.command(name="resetdaily", aliases=["cleardaily"])
+    @commands.is_owner()
+    async def resetdaily(self, ctx: commands.Context, member: discord.Member = None):
+        """
+        Mereset status klaim daily player (set last_daily_claim = 0).
+        Berguna untuk testing klaim berulang kali.
+        Pemakaian: !resetdaily [@user]
+        """
+        target = member or ctx.author
+        database.admin_reset_daily(target.id)
+
+        embed = discord.Embed(
+            title="🎁 Daily Claim Direset (Admin Override)",
+            description=f"Status daily {target.mention} berhasil direset. User sekarang bisa `!daily` kembali.",
+            color=discord.Color.green(),
+        )
+        embed.set_footer(text=f"Dieksekusi oleh: {ctx.author.display_name}")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="setstreak")
+    @commands.is_owner()
+    async def setstreak(self, ctx: commands.Context, member: discord.Member, streak: int):
+        """
+        Mengatur daily streak player LANGSUNG ke nilai tertentu.
+        Pemakaian: !setstreak @user 5
+        """
+        if streak < 0:
+            await ctx.send("❌ Streak tidak boleh negatif.")
+            return
+
+        database.admin_set_streak(member.id, streak)
+
+        embed = discord.Embed(
+            title="🔥 Streak Di-set (Admin Override)",
+            description=f"Daily streak {member.mention} sekarang di-set ke **{streak} Hari**.",
+            color=discord.Color.gold(),
+        )
+        embed.set_footer(text=f"Dieksekusi oleh: {ctx.author.display_name}")
         await ctx.send(embed=embed)
 
     # =====================================================

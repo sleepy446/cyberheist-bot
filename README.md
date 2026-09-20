@@ -81,12 +81,13 @@ If successful, you should see:
 | Command | Aliases | Description |
 |---------|---------|-------------|
 | `!hack` | - | Hack a random target for Bytes and XP (4 second cooldown) |
-| `!profile` | `!stats` | View your stats: level, Bytes, XP, Heat, and hardware |
+| `!profile` | `!stats` | View your stats: level, Bytes, XP, Heat, hardware, and daily streak |
 | `!leaderboard` | `!lb`, `!top` | Show top 10 wealthiest hackers |
 | `!shop` | `!blackmarket`, `!store` | View available hardware for purchase |
 | `!buy <tier>` | - | Purchase hardware (example: `!buy 1`) |
 | `!net` | `!mine`, `!claim` | Claim passive income from your rig (5 minute cooldown) |
 | `!clean` | `!wash`, `!laylow` | Reduce Heat by paying Bytes (3 minute cooldown) |
+| `!daily` | `!claimdaily`, `!gajian`, `!reward` | Claim daily reward with streak bonus (resets 00:00 UTC) |
 | `!help` | - | Display list of player commands |
 | `!ping` | - | Check bot latency |
 
@@ -104,6 +105,8 @@ Available only to the bot owner (the account that created the Discord applicatio
 | `!setlevel @user <level>` | Set player level directly |
 | `!setheat @user <0-100>` | Set player Heat without triggering jail |
 | `!setrig @user <tier>` | Set player rig level directly |
+| `!resetdaily [@user]` | Reset daily claim status for testing |
+| `!setstreak @user <days>` | Set player daily streak to specific value |
 | `!resetplayer @user confirm` | Delete all player data (requires confirmation) |
 | `!playerinfo [@user]` | View raw database data for a player |
 | `!dbstats` | View economy statistics (total players, Bytes, etc) |
@@ -141,6 +144,21 @@ Available only to the bot owner (the account that created the Discord applicatio
 | 2 | GPU Rig | 2,500 Bytes | +30 Bytes |
 | 3 | Server Rack | 10,000 Bytes | +150 Bytes |
 
+### Daily Reward System
+
+- Available every 24 hours (resets at 00:00 UTC)
+- **Base Reward:** 100-200 Bytes (guaranteed)
+- **Streak Bonus:** +10 Bytes per consecutive day, capped at 100 Bytes max (reached on day 10)
+- **Mystery Drop Pool** (one random bonus):
+  - 40% Extra Bytes: +25 to +50 Bytes
+  - 30% Bonus XP: +20 to +40 XP (auto-processes level ups)
+  - 20% Heat Reduction: -10 to -20 Heat
+  - 10% Encrypted Master Key: +15 to +30 Bytes
+- **Streak Rules:**
+  - Claim daily to maintain streak
+  - Missing a day resets streak to 1
+  - View current streak in `!profile`
+
 ## Project Structure
 
 ```
@@ -162,6 +180,7 @@ cyberheist-bot/
 │   ├── shop.py          # Shop and buy commands
 │   ├── net.py           # Passive income claim
 │   ├── clean.py         # Heat reduction
+│   ├── daily.py         # Daily reward system
 │   ├── admin.py         # Admin commands
 │   ├── help.py          # Help commands
 │   └── tasks.py         # Background tasks (heat decay)

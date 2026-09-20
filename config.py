@@ -96,6 +96,31 @@ RIG_TIERS = [
 
 
 # =========================================================
+# DAILY REWARD SYSTEM
+# =========================================================
+# Base reward yang dijamin setiap hari
+DAILY_BASE_BYTES_MIN = 100
+DAILY_BASE_BYTES_MAX = 200
+
+# Streak bonus (capped)
+DAILY_STREAK_BONUS_PER_DAY = 10  # +10 Bytes per hari streak
+DAILY_STREAK_BONUS_MAX = 100      # Maksimal bonus streak 100 Bytes
+
+# Mystery bonus drops
+DAILY_BONUS_EXTRA_BYTES_MIN = 25
+DAILY_BONUS_EXTRA_BYTES_MAX = 50
+DAILY_BONUS_XP_MIN = 20
+DAILY_BONUS_XP_MAX = 40
+DAILY_BONUS_HEAT_REDUCE_MIN = 10
+DAILY_BONUS_HEAT_REDUCE_MAX = 20
+DAILY_BONUS_CIPHER_BYTES_MIN = 15
+DAILY_BONUS_CIPHER_BYTES_MAX = 30
+
+# Anti-spam cooldown
+DAILY_COOLDOWN_SECONDS = 10
+
+
+# =========================================================
 # DATABASE
 # =========================================================
 # Path absolut relatif ke lokasi file ini, bukan CWD
