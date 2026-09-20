@@ -3,7 +3,7 @@ CyberHeist Bot - Clean / Heat Reduction Cog
 ===========================================
 Cog ini menangani mekanisme manajemen risiko via command !clean.
 Digunakan player untuk mencuci jejak digital / menurunkan Heat
-dengan membayar sejumlah Bytes atau menggunakan cooldown tertentu.
+dengan membayar sejumlah Bytes.
 """
 
 import discord
@@ -27,23 +27,18 @@ class CleanCog(commands.Cog):
         Pemakaian di Discord: !clean
         """
         user_id = ctx.author.id
-        guild_id = ctx.guild.id
-        player = database.get_player(user_id, guild_id)
+        player = database.get_player(user_id)
         current_heat = player["heat"]
 
-        # Kalau heat sudah 0, tidak perlu dibersihkan
         if current_heat <= 0:
-            # Penting: Reset cooldown jika aksi tidak jadi dilakukan
             ctx.command.reset_cooldown(ctx)
             await ctx.send(f"🛡️ {ctx.author.mention}, jejak digitalmu sudah bersih total! Heat kamu di angka `0/100`.")
             return
 
-        # Tentukan biaya pembersihan berdasarkan seberapa tinggi heat saat ini
-        # Contoh: Heat 50 = 100 Bytes (dihitung dari config atau rumus dinamis)
+        # Biaya pembersihan berdasarkan seberapa tinggi heat saat ini
         cleaning_cost = int(current_heat * 2.5)
 
         if player["bytes"] < cleaning_cost:
-            # Penting: Reset cooldown jika gagal bayar
             ctx.command.reset_cooldown(ctx)
             await ctx.send(
                 f"❌ Bytes kamu tidak cukup untuk membayar jasa hacker VPN pembersih jejak!\n"
@@ -53,14 +48,12 @@ class CleanCog(commands.Cog):
             return
 
         # 1. Kurangi Bytes (bayar jasa)
-        database.add_bytes(user_id, guild_id, -cleaning_cost)
-        
-        # 2. Kurangi Heat sejumlah config.
-        # PERBAIKAN: Tangkap hasil dictionary dari database, lalu ambil nilai int ["heat"]-nya.
-        heat_result = database.add_heat(user_id, guild_id, -config.HEAT_REDUCTION_PER_CLEAN)
+        database.add_bytes(user_id, -cleaning_cost)
+
+        # 2. Kurangi Heat sejumlah config
+        heat_result = database.add_heat(user_id, -config.HEAT_REDUCTION_PER_CLEAN)
         new_heat = heat_result["heat"]
 
-        # Tentukan status Heat secara dinamis sesuai threshold config
         if new_heat >= config.HEAT_DANGER_THRESHOLD:
             heat_status = "🚨 BAHAYA - Segera !clean!"
         elif new_heat >= config.HEAT_DANGER_THRESHOLD // 2:
@@ -68,7 +61,6 @@ class CleanCog(commands.Cog):
         else:
             heat_status = "🟢 Aman"
 
-        # Susun Embed Respon
         embed = discord.Embed(
             title="🧹 Jejak Digital Dibersihkan",
             description=f"Berhasil meretas balik server kepolisian virtual dan mencuci IP address, {ctx.author.mention}!",
@@ -91,7 +83,6 @@ class CleanCog(commands.Cog):
                 delete_after=5
             )
         else:
-            # Print error lain ke console untuk debugging
             raise error
 
 

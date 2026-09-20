@@ -21,8 +21,7 @@ class ShopCog(commands.Cog):
     async def shop(self, ctx: commands.Context):
         """Menampilkan daftar hardware rig yang bisa dibeli."""
         user_id = ctx.author.id
-        guild_id = ctx.guild.id
-        player = database.get_player(user_id, guild_id)
+        player = database.get_player(user_id)
         user_bytes = player["bytes"]
 
         embed = discord.Embed(
@@ -31,7 +30,10 @@ class ShopCog(commands.Cog):
                 f"Gunakan Bytes hasil hacking-mu untuk upgrade rig dan automatisasi penambangan!\n\n"
                 f"💰 **Saldo Bytes Kamu:** `{user_bytes:,} Bytes`"
             ),
-            color=discord.Color.dark_embed()
+            # PERBAIKAN BUG: discord.Color.dark_embed() TIDAK ADA di discord.py,
+            # ini bikin !shop crash (AttributeError) tiap kali dipanggil.
+            # Diganti ke discord.Color.dark_gold() yang valid & masih cocok tema black market.
+            color=discord.Color.dark_gold()
         )
 
         embed.add_field(
@@ -60,7 +62,6 @@ class ShopCog(commands.Cog):
             await ctx.send("❌ Masukkan nomor tier yang ingin dibeli, contoh: `!buy 1`, `!buy 2`, atau `!buy 3`.")
             return
 
-        # Definisikan harga dan data rig berdasarkan tier
         items = {
             1: {"name": "Botnet Kecil (Tier 1)", "price": 500},
             2: {"name": "GPU Rig (Tier 2)", "price": 2500},
@@ -73,11 +74,8 @@ class ShopCog(commands.Cog):
 
         selected_item = items[tier]
         user_id = ctx.author.id
-        guild_id = ctx.guild.id
-        player = database.get_player(user_id, guild_id)
+        player = database.get_player(user_id)
 
-        # --- VALIDASI KEPEMILIKAN RIG ---
-        # Cegah pemain membeli hardware yang tingkatnya sama atau lebih rendah dari yang sudah dimiliki.
         if player["rig_level"] >= tier:
             await ctx.send(
                 f"❌ Kamu sudah memiliki **{config.RIG_TIERS[player['rig_level'] - 1]['name']}** (Tier {player['rig_level']})!\n"
@@ -85,7 +83,6 @@ class ShopCog(commands.Cog):
             )
             return
 
-        # Cek apakah Bytes player cukup
         if player["bytes"] < selected_item["price"]:
             await ctx.send(
                 f"❌ Bytes kamu tidak cukup untuk membeli **{selected_item['name']}**!\n"
@@ -93,11 +90,8 @@ class ShopCog(commands.Cog):
             )
             return
 
-        # 1. Kurangi bytes player
-        database.add_bytes(user_id, guild_id, -selected_item["price"])
-
-        # 2. Update level rig pemain di database (PERBAIKAN BUG)
-        database.set_rig_level(user_id, guild_id, tier)
+        database.add_bytes(user_id, -selected_item["price"])
+        database.set_rig_level(user_id, tier)
 
         await ctx.send(
             f"✅ Berhasil membeli **{selected_item['name']}** seharga **{selected_item['price']:,} Bytes**! "

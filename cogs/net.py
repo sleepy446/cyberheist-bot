@@ -3,7 +3,6 @@ CyberHeist Bot - Net / Passive Income Cog
 ==========================================
 Cog ini menangani klaim hasil tambang/passive income (!net)
 berdasarkan level hardware (rig) yang dimiliki player.
-Dilengkapi cooldown agar player harus menunggu waktu tertentu untuk klaim lagi.
 """
 
 import discord
@@ -20,20 +19,17 @@ class NetCog(commands.Cog):
         self.bot = bot
 
     @commands.command(name="net", aliases=["mine", "claim"])
-    @commands.cooldown(1, 300, commands.BucketType.user)  # Cooldown 5 menit (bisa disesuaikan nanti)
+    @commands.cooldown(1, 300, commands.BucketType.user)  # Cooldown 5 menit
     async def net(self, ctx: commands.Context):
         """
         Klaim hasil passive income dari rig/hardware yang aktif.
         Pemakaian di Discord: !net
         """
         user_id = ctx.author.id
-        guild_id = ctx.guild.id
-        player = database.get_player(user_id, guild_id)
+        player = database.get_player(user_id)
         rig_level = player["rig_level"]
 
-        # Cek apakah player sudah punya hardware (rig_level > 0)
         if rig_level == 0:
-            # Karena command gagal, kita reset cooldown-nya biar player gak rugi
             ctx.command.reset_cooldown(ctx)
             await ctx.send(
                 f"⚠️ {ctx.author.mention}, kamu belum punya hardware/rig penambangan!\n"
@@ -41,14 +37,11 @@ class NetCog(commands.Cog):
             )
             return
 
-        # Ambil data income berdasarkan rig_level di config.py
-        # rig_level 1 ada di index 0 RIG_TIERS
         rig_data = config.RIG_TIERS[rig_level - 1]
         income = rig_data["income_per_tick"]
         rig_name = rig_data["name"]
 
-        # Tambahkan Bytes ke database player
-        database.add_bytes(user_id, guild_id, income)
+        database.add_bytes(user_id, income)
 
         embed = discord.Embed(
             title="📡 Jaringan Penambangan Berhasil Diklaim",

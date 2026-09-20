@@ -70,13 +70,13 @@ class AdminCog(commands.Cog):
         Pemakaian: !unjail [@user]  (default: diri sendiri)
         """
         target = member or ctx.author
-        jail_status = database.is_jailed(target.id, ctx.guild.id)
+        jail_status = database.is_jailed(target.id)
 
         if not jail_status["jailed"]:
             await ctx.send(f"ℹ️ {target.mention} sedang tidak dalam status jail.")
             return
 
-        database.clear_jail(target.id, ctx.guild.id)
+        database.clear_jail(target.id)
         embed = discord.Embed(
             title="🔓 Status Jail Dibatalkan (Admin Override)",
             description=f"{target.mention} sekarang bebas dan bisa `!hack` lagi.",
@@ -96,8 +96,8 @@ class AdminCog(commands.Cog):
         Menambah (atau mengurangi kalau negatif) Bytes seorang player.
         Pemakaian: !addbytes @user 500   atau   !addbytes @user -200
         """
-        database.add_bytes(member.id, ctx.guild.id, amount)
-        new_total = database.get_player(member.id, ctx.guild.id)["bytes"]
+        database.add_bytes(member.id, amount)
+        new_total = database.get_player(member.id)["bytes"]
 
         verb = "ditambahkan ke" if amount >= 0 else "dikurangi dari"
         embed = discord.Embed(
@@ -115,7 +115,7 @@ class AdminCog(commands.Cog):
         Mengatur Bytes seorang player LANGSUNG ke angka tertentu.
         Pemakaian: !setbytes @user 10000
         """
-        database.set_bytes(member.id, ctx.guild.id, amount)
+        database.set_bytes(member.id, amount)
         embed = discord.Embed(
             title="💰 Bytes Di-set (Admin Override)",
             description=f"Bytes {member.mention} sekarang di-set ke `{max(0, amount):,}`.",
@@ -134,7 +134,7 @@ class AdminCog(commands.Cog):
         Menambah XP seorang player (otomatis memproses level up kalau cukup).
         Pemakaian: !addxp @user 1000
         """
-        result = database.add_xp(member.id, ctx.guild.id, amount)
+        result = database.add_xp(member.id, amount)
 
         embed = discord.Embed(
             title="⚡ XP Ditambahkan (Admin Override)",
@@ -162,7 +162,7 @@ class AdminCog(commands.Cog):
             await ctx.send("❌ Level minimal adalah 1.")
             return
 
-        database.set_level(member.id, ctx.guild.id, level, xp=0)
+        database.set_level(member.id, level, xp=0)
         embed = discord.Embed(
             title="📈 Level Di-set (Admin Override)",
             description=f"Level {member.mention} sekarang di-set ke `{level}` (XP direset ke 0).",
@@ -182,8 +182,8 @@ class AdminCog(commands.Cog):
         TANPA memicu logic arrested/jail. Untuk override murni.
         Pemakaian: !setheat @user 65
         """
-        database.set_heat(member.id, ctx.guild.id, value)
-        new_heat = database.get_player(member.id, ctx.guild.id)["heat"]
+        database.set_heat(member.id, value)
+        new_heat = database.get_player(member.id)["heat"]
 
         embed = discord.Embed(
             title="🔥 Heat Di-set (Admin Override)",
@@ -209,7 +209,7 @@ class AdminCog(commands.Cog):
             await ctx.send(f"❌ Tier harus antara 0 (tidak punya rig) sampai {max_tier}.")
             return
 
-        database.set_rig_level(member.id, ctx.guild.id, tier)
+        database.set_rig_level(member.id, tier)
         rig_name = "Tidak ada" if tier == 0 else config.RIG_TIERS[tier - 1]["name"]
 
         embed = discord.Embed(
@@ -240,7 +240,7 @@ class AdminCog(commands.Cog):
             )
             return
 
-        database.reset_player(member.id, ctx.guild.id)
+        database.reset_player(member.id)
         embed = discord.Embed(
             title="🗑️ Data Player Direset (Admin Override)",
             description=f"Seluruh data {member.mention} berhasil dihapus. Statusnya sekarang seperti player baru.",
@@ -263,15 +263,14 @@ class AdminCog(commands.Cog):
         Pemakaian: !playerinfo [@user]
         """
         target = member or ctx.author
-        player = database.get_player(target.id, ctx.guild.id)
-        jail_status = database.is_jailed(target.id, ctx.guild.id)
+        player = database.get_player(target.id)
+        jail_status = database.is_jailed(target.id)
 
         embed = discord.Embed(
             title=f"🔍 Raw Data: {target.display_name}",
             color=discord.Color.dark_grey(),
         )
         embed.add_field(name="user_id", value=f"`{player['user_id']}`", inline=False)
-        embed.add_field(name="guild_id", value=f"`{player['guild_id']}`", inline=False)
         embed.add_field(name="bytes", value=f"`{player['bytes']}`", inline=True)
         embed.add_field(name="level", value=f"`{player['level']}`", inline=True)
         embed.add_field(name="xp", value=f"`{player['xp']}`", inline=True)
@@ -308,7 +307,7 @@ class AdminCog(commands.Cog):
         Berguna untuk memantau kesehatan balancing game.
         Pemakaian: !dbstats
         """
-        stats = database.get_economy_stats(guild_id=ctx.guild.id)
+        stats = database.get_economy_stats()
 
         embed = discord.Embed(
             title="📊 Statistik Ekonomi Server",

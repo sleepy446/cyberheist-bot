@@ -3,6 +3,8 @@ CyberHeist Bot - Hack Cog (Grinding Core)
 =========================================
 Cog ini menangani mekanika inti permainan: grinding manual via !hack.
 Mengatur perolehan Bytes, XP, kenaikan Level, dan akumulasi Heat (risiko).
+Dilengkapi peluang gagal berdasarkan Heat saat ini - makin tinggi Heat,
+makin berisiko infiltrasi terdeteksi.
 """
 
 import random
@@ -28,20 +30,11 @@ class HackCog(commands.Cog):
         Pemakaian di Discord: !hack
         """
         user_id = ctx.author.id
-        guild_id = ctx.guild.id
-
-        # Pastikan player terdaftar di database
-        player = database.get_player(user_id, guild_id)
 
         # --- CEK STATUS JAIL (cooldown 5 menit setelah arrested) ---
         # Ini WAJIB dicek paling awal, sebelum logic hack lainnya jalan.
-        # Player yang baru saja digerebek (heat mencapai 100) tidak boleh
-        # langsung !hack lagi walaupun heat mereka sudah direset ke 0/100,
-        # karena statusnya masih "dalam pengawasan" selama JAIL_COOLDOWN_SECONDS.
-        jail_status = database.is_jailed(user_id, guild_id)
+        jail_status = database.is_jailed(user_id)
         if jail_status["jailed"]:
-            # Reset cooldown 4 detik biasa, supaya player tidak kena double
-            # penalti (cooldown normal + cooldown jail) untuk aksi yang gagal ini.
             ctx.command.reset_cooldown(ctx)
 
             remaining = jail_status["seconds_remaining"]
@@ -67,7 +60,7 @@ class HackCog(commands.Cog):
             return
 
         # Pastikan player terdaftar di database
-        player = database.get_player(user_id, guild_id)
+        player = database.get_player(user_id)
         current_heat = player["heat"]
 
         # --- HITUNG PELUANG GAGAL BERDASARKAN HEAT ---
@@ -78,12 +71,11 @@ class HackCog(commands.Cog):
         else:
             failure_chance = 35  # 35% peluang gagal jika heat tinggi (71 - 99)
 
-        # Cek apakah peretasan gagal
         is_failed = random.randint(1, 100) <= failure_chance
 
         if is_failed:
-            # Jika gagal, pemain tidak mendapat Bytes & XP, tapi Heat tetap bertambah (meninggalkan jejak)
-            heat_result = database.add_heat(user_id, guild_id, config.HEAT_GAIN_PER_HACK)
+            # Jika gagal, tidak dapat Bytes & XP, tapi Heat tetap bertambah (meninggalkan jejak)
+            heat_result = database.add_heat(user_id, config.HEAT_GAIN_PER_HACK)
             new_heat = heat_result["heat"]
 
             fail_targets = [
@@ -112,7 +104,6 @@ class HackCog(commands.Cog):
 
             await ctx.send(embed=embed)
 
-            # Jika penambahan heat dari kegagalan ini membuatnya pas menyentuh/lewat 100 (bisa digerebek saat gagal!)
             if heat_result["arrested"]:
                 jail_embed = discord.Embed(
                     title="🚨 SERVER TERLACAK - ANDA DIGEREBEK!",
@@ -142,13 +133,12 @@ class HackCog(commands.Cog):
         earned_xp = random.randint(15, 35)
 
         # 2. Masukkan ke database
-        database.add_bytes(user_id, guild_id, earned_bytes)
-        xp_result = database.add_xp(user_id, guild_id, earned_xp)
+        database.add_bytes(user_id, earned_bytes)
+        xp_result = database.add_xp(user_id, earned_xp)
 
         # 3. Tambah Heat
-        heat_result = database.add_heat(user_id, guild_id, config.HEAT_GAIN_PER_HACK)
+        heat_result = database.add_heat(user_id, config.HEAT_GAIN_PER_HACK)
         new_heat = heat_result["heat"]
-
 
         # 4. Buat narasi acak target hack
         targets = [
@@ -169,7 +159,6 @@ class HackCog(commands.Cog):
         embed.add_field(name="💰 Bytes Didapat", value=f"+{earned_bytes:,} Bytes", inline=True)
         embed.add_field(name="⚡ XP Didapat", value=f"+{earned_xp} XP", inline=True)
 
-        # Indikator Heat dengan peringatan jika mendekati zona merah
         heat_warning = ""
         if new_heat >= config.HEAT_DANGER_THRESHOLD:
             heat_warning = "\n⚠️ **PERINGATAN: Heat tinggi! Segera jalankan `!clean`!**"
