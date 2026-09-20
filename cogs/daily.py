@@ -7,6 +7,7 @@ Reset harian berbasis UTC (00:00 UTC).
 
 import random
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 import database
@@ -19,15 +20,15 @@ class DailyCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="daily", aliases=["claimdaily", "gajian", "reward"])
-    @commands.cooldown(1, config.DAILY_COOLDOWN_SECONDS, commands.BucketType.user)
-    async def daily(self, ctx: commands.Context):
+    @app_commands.command(name="daily", description="Klaim hadiah harian, streak bonus, dan mystery drop (reset 00:00 UTC)")
+    @app_commands.checks.cooldown(1, config.DAILY_COOLDOWN_SECONDS, key=lambda i: i.user.id)
+    async def daily(self, interaction: discord.Interaction):
         """
         Klaim reward harian dengan streak bonus dan mystery drop.
         Reset setiap hari di 00:00 UTC.
-        Pemakaian di Discord: !daily
+        Pemakaian di Discord: /daily
         """
-        user_id = ctx.author.id
+        user_id = interaction.user.id
         daily_status = database.get_daily_status(user_id)
 
         # Jika sudah klaim hari ini, tampilkan countdown
@@ -39,7 +40,7 @@ class DailyCog(commands.Cog):
 
             embed = discord.Embed(
                 title="⏰ Daily Reward Sudah Diklaim",
-                description=f"{ctx.author.mention}, kamu sudah mengambil jatah harian hari ini!",
+                description=f"{interaction.user.mention}, kamu sudah mengambil jatah harian hari ini!",
                 color=discord.Color.orange()
             )
             embed.add_field(
@@ -53,7 +54,7 @@ class DailyCog(commands.Cog):
                 inline=True
             )
             embed.set_footer(text="Kembali lagi setelah reset 00:00 UTC untuk melanjutkan streak!")
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
             return
 
         # --- MULAI PROSES KLAIM ---
@@ -126,7 +127,10 @@ class DailyCog(commands.Cog):
 
         if not claim_result["success"]:
             # Race condition / sudah diklaim di thread lain
-            await ctx.send("❌ Terjadi error: Daily reward sudah diklaim!")
+            await interaction.response.send_message(
+                "❌ Terjadi error: Daily reward sudah diklaim!",
+                ephemeral=True
+            )
             return
 
         # 5. Buat embed response
@@ -135,7 +139,7 @@ class DailyCog(commands.Cog):
 
         embed = discord.Embed(
             title="🎁 Daily Reward Diklaim!",
-            description=f"Selamat {ctx.author.mention}! Kamu mendapatkan hadiah harian!",
+            description=f"Selamat {interaction.user.mention}! Kamu mendapatkan hadiah harian!",
             color=discord.Color.green()
         )
 
@@ -166,16 +170,16 @@ class DailyCog(commands.Cog):
         )
 
         embed.set_footer(text="Reset harian: 00:00 UTC • Jangan lewatkan esok hari untuk lanjutkan streak!")
-        embed.set_thumbnail(url=ctx.author.display_avatar.url)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
         # 6. Kirim notifikasi level up jika ada
         if claim_result["level_up_result"] and claim_result["level_up_result"]["leveled_up"]:
             level_result = claim_result["level_up_result"]
             level_embed = discord.Embed(
                 title="🎉 LEVEL UP!",
-                description=f"Bonus XP dari daily reward membuatmu naik level, {ctx.author.mention}!",
+                description=f"Bonus XP dari daily reward membuatmu naik level, {interaction.user.mention}!",
                 color=discord.Color.gold()
             )
             level_embed.add_field(
@@ -183,19 +187,7 @@ class DailyCog(commands.Cog):
                 value=f"**{level_result['old_level']}** ➡️ **{level_result['new_level']}**",
                 inline=False
             )
-            await ctx.send(embed=level_embed)
-
-    @daily.error
-    async def daily_error(self, ctx: commands.Context, error):
-        """Menangani error cooldown command !daily."""
-        if isinstance(error, commands.CommandOnCooldown):
-            remaining = round(error.retry_after, 1)
-            await ctx.send(
-                f"⏳ Tunggu **{remaining} detik** sebelum menggunakan `!daily` lagi.",
-                delete_after=5
-            )
-        else:
-            raise error
+            await interaction.followup.send(embed=level_embed)
 
 
 async def setup(bot: commands.Bot):

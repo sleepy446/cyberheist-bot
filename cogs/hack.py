@@ -1,7 +1,7 @@
 """
 CyberHeist Bot - Hack Cog (Grinding Core)
 =========================================
-Cog ini menangani mekanika inti permainan: grinding manual via !hack.
+Cog ini menangani mekanika inti permainan: grinding manual via /hack.
 Mengatur perolehan Bytes, XP, kenaikan Level, dan akumulasi Heat (risiko).
 Dilengkapi peluang gagal berdasarkan Heat saat ini - makin tinggi Heat,
 makin berisiko infiltrasi terdeteksi.
@@ -9,6 +9,7 @@ makin berisiko infiltrasi terdeteksi.
 
 import random
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 import database
@@ -21,22 +22,20 @@ class HackCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="hack")
-    @commands.cooldown(1, 4, commands.BucketType.user)  # Cooldown 4 detik biar gak spam macro
-    async def hack(self, ctx: commands.Context):
+    @app_commands.command(name="hack", description="Hack target acak untuk mendapatkan Bytes dan XP (berisiko menaikkan Heat)")
+    @app_commands.checks.cooldown(1, 4, key=lambda i: i.user.id)  # Cooldown 4 detik biar gak spam macro
+    async def hack(self, interaction: discord.Interaction):
         """
         Command utama grinding: meretas target kecil untuk dapet Bytes & XP,
         tapi menaikkan Heat (tingkat buronan).
-        Pemakaian di Discord: !hack
+        Pemakaian di Discord: /hack
         """
-        user_id = ctx.author.id
+        user_id = interaction.user.id
 
         # --- CEK STATUS JAIL (cooldown 5 menit setelah arrested) ---
         # Ini WAJIB dicek paling awal, sebelum logic hack lainnya jalan.
         jail_status = database.is_jailed(user_id)
         if jail_status["jailed"]:
-            ctx.command.reset_cooldown(ctx)
-
             remaining = jail_status["seconds_remaining"]
             minutes, seconds = divmod(remaining, 60)
             time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
@@ -44,7 +43,7 @@ class HackCog(commands.Cog):
             jail_embed = discord.Embed(
                 title="🔒 STATUS: DALAM PENGAWASAN",
                 description=(
-                    f"Sabar dulu, {ctx.author.mention}! Kamu baru saja digerebek dan "
+                    f"Sabar dulu, {interaction.user.mention}! Kamu baru saja digerebek dan "
                     f"masih dalam masa investigasi pihak berwenang. Semua aktivitas "
                     f"hacking-mu sedang dipantau ketat."
                 ),
@@ -54,9 +53,9 @@ class HackCog(commands.Cog):
                 name="⏳ Sisa Waktu Karantina", value=f"**{time_str}**", inline=False
             )
             jail_embed.set_footer(
-                text="Tunggu sampai status karantina berakhir sebelum !hack lagi."
+                text="Tunggu sampai status karantina berakhir sebelum /hack lagi."
             )
-            await ctx.send(embed=jail_embed)
+            await interaction.response.send_message(embed=jail_embed)
             return
 
         # Pastikan player terdaftar di database
@@ -97,17 +96,17 @@ class HackCog(commands.Cog):
 
             heat_warning = ""
             if new_heat >= config.HEAT_DANGER_THRESHOLD:
-                heat_warning = "\n⚠️ **PERINGATAN: Heat tinggi! Segera jalankan `!clean`!**"
+                heat_warning = "\n⚠️ **PERINGATAN: Heat tinggi! Segera jalankan `/clean`!**"
 
             embed.add_field(name="🔥 Heat Level", value=f"{new_heat}/100{heat_warning}", inline=False)
-            embed.set_footer(text=f"Hacker: {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
+            embed.set_footer(text=f"Hacker: {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
 
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
 
             if heat_result["arrested"]:
                 jail_embed = discord.Embed(
                     title="🚨 SERVER TERLACAK - ANDA DIGEREBEK!",
-                    description=f"Sial, {ctx.author.mention}! Heat kamu mencapai **100/100**. Tim Cyber Crime berhasil melacak lokasimu saat kamu gagal menyusup!",
+                    description=f"Sial, {interaction.user.mention}! Heat kamu mencapai **100/100**. Tim Cyber Crime berhasil melacak lokasimu saat kamu gagal menyusup!",
                     color=discord.Color.red(),
                 )
                 jail_embed.add_field(
@@ -119,12 +118,12 @@ class HackCog(commands.Cog):
                     name="🛡️ Status Karantina",
                     value=(
                         "Hardware diputus sementara. Heat di-reset ke `0/100`.\n"
-                        f"Kamu tidak bisa `!hack` selama **{config.JAIL_COOLDOWN_SECONDS // 60} menit**."
+                        f"Kamu tidak bisa `/hack` selama **{config.JAIL_COOLDOWN_SECONDS // 60} menit**."
                     ),
                     inline=False,
                 )
-                jail_embed.set_footer(text="Hati-hati ke depannya. Jangan lupa !clean sebelum heat mentok!")
-                await ctx.send(embed=jail_embed)
+                jail_embed.set_footer(text="Hati-hati ke depannya. Jangan lupa /clean sebelum heat mentok!")
+                await interaction.followup.send(embed=jail_embed)
 
             return
 
@@ -161,18 +160,18 @@ class HackCog(commands.Cog):
 
         heat_warning = ""
         if new_heat >= config.HEAT_DANGER_THRESHOLD:
-            heat_warning = "\n⚠️ **PERINGATAN: Heat tinggi! Segera jalankan `!clean`!**"
+            heat_warning = "\n⚠️ **PERINGATAN: Heat tinggi! Segera jalankan `/clean`!**"
 
         embed.add_field(name="🔥 Heat Level", value=f"{new_heat}/100{heat_warning}", inline=False)
-        embed.set_footer(text=f"Hacker: {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
+        embed.set_footer(text=f"Hacker: {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
 
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
         # 6. Jika penambahan heat dari hack ini membuatnya pas menyentuh/lewat 100
         if heat_result["arrested"]:
             jail_embed = discord.Embed(
                 title="🚨 SERVER TERLACAK - ANDA DIGEREBEK!",
-                description=f"Sial, {ctx.author.mention}! Heat kamu mencapai **100/100**. Tim Cyber Crime berhasil melacak lokasimu!",
+                description=f"Sial, {interaction.user.mention}! Heat kamu mencapai **100/100**. Tim Cyber Crime berhasil melacak lokasimu!",
                 color=discord.Color.red(),
             )
             jail_embed.add_field(
@@ -184,30 +183,21 @@ class HackCog(commands.Cog):
                 name="🛡️ Status Karantina",
                 value=(
                     "Hardware diputus sementara. Heat di-reset ke `0/100`.\n"
-                    f"Kamu tidak bisa `!hack` selama **{config.JAIL_COOLDOWN_SECONDS // 60} menit**."
+                    f"Kamu tidak bisa `/hack` selama **{config.JAIL_COOLDOWN_SECONDS // 60} menit**."
                 ),
                 inline=False,
             )
-            jail_embed.set_footer(text="Hati-hati ke depannya. Jangan lupa !clean sebelum heat mentok!")
-            await ctx.send(embed=jail_embed)
+            jail_embed.set_footer(text="Hati-hati ke depannya. Jangan lupa /clean sebelum heat mentok!")
+            await interaction.followup.send(embed=jail_embed)
 
         # 7. Jika player naik level, kirim pesan tambahan
         if xp_result["leveled_up"]:
             level_embed = discord.Embed(
                 title="🎉 LEVEL UP!",
-                description=f"Hebat, {ctx.author.mention}! Kamu naik dari Level **{xp_result['old_level']}** ➡️ **{xp_result['new_level']}**!",
+                description=f"Hebat, {interaction.user.mention}! Kamu naik dari Level **{xp_result['old_level']}** ➡️ **{xp_result['new_level']}**!",
                 color=discord.Color.gold(),
             )
-            await ctx.send(embed=level_embed)
-
-    @hack.error
-    async def hack_error(self, ctx: commands.Context, error):
-        """Menangani error cooldown command !hack."""
-        if isinstance(error, commands.CommandOnCooldown):
-            remaining = round(error.retry_after, 1)
-            await ctx.send(f"⏳ Sistem pendinginan perangkat... Tunggu **{remaining} detik** lagi sebelum nge-hack ulang.", delete_after=5)
-        else:
-            raise error
+            await interaction.followup.send(embed=level_embed)
 
 
 async def setup(bot: commands.Bot):

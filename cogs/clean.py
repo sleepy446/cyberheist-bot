@@ -1,12 +1,13 @@
 """
 CyberHeist Bot - Clean / Heat Reduction Cog
 ===========================================
-Cog ini menangani mekanisme manajemen risiko via command !clean.
+Cog ini menangani mekanisme manajemen risiko via command /clean.
 Digunakan player untuk mencuci jejak digital / menurunkan Heat
 dengan membayar sejumlah Bytes.
 """
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 import database
@@ -19,31 +20,33 @@ class CleanCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="clean", aliases=["wash", "laylow"])
-    @commands.cooldown(1, config.CLEAN_COOLDOWN_SECONDS, commands.BucketType.user)  # Cooldown disesuaikan dari config
-    async def clean(self, ctx: commands.Context):
+    @app_commands.command(name="clean", description="Bersihkan jejak digital dan turunkan Heat dengan membayar Bytes")
+    @app_commands.checks.cooldown(1, config.CLEAN_COOLDOWN_SECONDS, key=lambda i: i.user.id)
+    async def clean(self, interaction: discord.Interaction):
         """
         Menurunkan tingkat Heat (buronan) player.
-        Pemakaian di Discord: !clean
+        Pemakaian di Discord: /clean
         """
-        user_id = ctx.author.id
+        user_id = interaction.user.id
         player = database.get_player(user_id)
         current_heat = player["heat"]
 
         if current_heat <= 0:
-            ctx.command.reset_cooldown(ctx)
-            await ctx.send(f"🛡️ {ctx.author.mention}, jejak digitalmu sudah bersih total! Heat kamu di angka `0/100`.")
+            await interaction.response.send_message(
+                f"🛡️ {interaction.user.mention}, jejak digitalmu sudah bersih total! Heat kamu di angka `0/100`.",
+                ephemeral=True
+            )
             return
 
         # Biaya pembersihan: basis tetap + scaling berdasarkan level
         cleaning_cost = config.CLEAN_BASE_COST + (player["level"] * config.CLEAN_SCALING_FACTOR)
 
         if player["bytes"] < cleaning_cost:
-            ctx.command.reset_cooldown(ctx)
-            await ctx.send(
+            await interaction.response.send_message(
                 f"❌ Bytes kamu tidak cukup untuk membayar jasa hacker VPN pembersih jejak!\n"
                 f"Butuh **{cleaning_cost:,} Bytes** (Level player: {player['level']}). "
-                f"Terus `!net` atau `!hack` dulu!"
+                f"Terus `/net` atau `/hack` dulu!",
+                ephemeral=True
             )
             return
 
@@ -55,7 +58,7 @@ class CleanCog(commands.Cog):
         new_heat = heat_result["heat"]
 
         if new_heat >= config.HEAT_DANGER_THRESHOLD:
-            heat_status = "🚨 BAHAYA - Segera !clean!"
+            heat_status = "🚨 BAHAYA - Segera /clean!"
         elif new_heat >= config.HEAT_DANGER_THRESHOLD // 2:
             heat_status = "⚠️ Waspada"
         else:
@@ -63,7 +66,7 @@ class CleanCog(commands.Cog):
 
         embed = discord.Embed(
             title="🧹 Jejak Digital Dibersihkan",
-            description=f"Berhasil meretas balik server kepolisian virtual dan mencuci IP address, {ctx.author.mention}!",
+            description=f"Berhasil meretas balik server kepolisian virtual dan mencuci IP address, {interaction.user.mention}!",
             color=discord.Color.blue()
         )
         embed.add_field(name="💸 Biaya Jasa", value=f"-{cleaning_cost:,} Bytes", inline=True)
@@ -73,19 +76,7 @@ class CleanCog(commands.Cog):
         cooldown_minutes = config.CLEAN_COOLDOWN_SECONDS // 60
         embed.set_footer(text=f"Sistem pendinginan jejak aktif. Cooldown {cooldown_minutes} menit sebelum membersihkan lagi.")
 
-        await ctx.send(embed=embed)
-
-    @clean.error
-    async def clean_error(self, ctx: commands.Context, error):
-        """Menangani error cooldown command !clean."""
-        if isinstance(error, commands.CommandOnCooldown):
-            remaining = round(error.retry_after, 1)
-            await ctx.send(
-                f"⏳ Proxy pembersih masih sibuk... Tunggu **{remaining} detik** lagi sebelum bisa `!clean`.",
-                delete_after=5
-            )
-        else:
-            raise error
+        await interaction.response.send_message(embed=embed)
 
 
 async def setup(bot: commands.Bot):

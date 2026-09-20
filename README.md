@@ -76,28 +76,31 @@ If successful, you should see:
 
 ## Commands
 
-### Player Commands
+### Player Commands (Slash Commands)
 
-| Command | Aliases | Description |
-|---------|---------|-------------|
-| `!hack` | - | Hack a random target for Bytes and XP (4 second cooldown) |
-| `!profile` | `!stats` | View your stats: level, Bytes, XP, Heat, hardware, and daily streak |
-| `!leaderboard` | `!lb`, `!top` | Show top 10 wealthiest hackers |
-| `!shop` | `!blackmarket`, `!store` | View available hardware for purchase |
-| `!buy <tier>` | - | Purchase hardware (example: `!buy 1`) |
-| `!net` | `!mine`, `!claim` | Claim passive income from your rig (5 minute cooldown) |
-| `!clean` | `!wash`, `!laylow` | Reduce Heat by paying Bytes (3 minute cooldown) |
-| `!daily` | `!claimdaily`, `!gajian`, `!reward` | Claim daily reward with streak bonus (resets 00:00 UTC) |
-| `!help` | - | Display list of player commands |
-| `!ping` | - | Check bot latency |
+All player commands use Discord **Slash Commands** (`/`):
 
-### Admin Commands
+| Command | Description |
+|---------|-------------|
+| `/hack` | Hack a random target for Bytes and XP (4 second cooldown) |
+| `/profile` | View your stats: level, Bytes, XP, Heat, hardware, and daily streak |
+| `/leaderboard` | Show top 10 wealthiest hackers |
+| `/shop` | View available hardware for purchase |
+| `/buy <tier>` | Purchase hardware with dynamic autocomplete (example: `/buy 1`) |
+| `/net` | Claim passive income from your rig (5 minute cooldown) |
+| `/clean` | Reduce Heat by paying Bytes (3 minute cooldown) |
+| `/daily` | Claim daily reward with streak bonus and mystery drops (resets 00:00 UTC) |
+| `/ping` | Check bot latency |
+| `/help` | Display list of player slash commands |
 
-Available only to the bot owner (the account that created the Discord application).
+### Admin Commands (Prefix Commands)
+
+Available only to the bot owner using standard prefix (`!`):
 
 | Command | Description |
 |---------|-------------|
 | `!ahelp` | View all admin commands |
+| `!sync [guild]` | Sync slash commands tree globally or locally to current guild |
 | `!unjail @user` | Remove jail status from a player |
 | `!addbytes @user <amount>` | Add or subtract Bytes (negative values allowed) |
 | `!setbytes @user <amount>` | Set player Bytes to a specific value |

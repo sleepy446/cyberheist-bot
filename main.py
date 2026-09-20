@@ -9,6 +9,7 @@ database & command inti (hack, rig, clean, dll) di tahap berikutnya.
 
 import os
 import discord
+from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -61,7 +62,7 @@ INITIAL_EXTENSIONS = [
 async def setup_hook():
     """
     Dipanggil otomatis oleh discord.py SEBELUM bot login ke Discord.
-    Tempat yang tepat untuk load semua cogs/extensions.
+    Tempat yang tepat untuk load semua cogs/extensions dan sync slash commands.
     """
     for extension in INITIAL_EXTENSIONS:
         try:
@@ -69,6 +70,13 @@ async def setup_hook():
             logger.info(f"Berhasil load cog: {extension}")
         except Exception as e:
             logger.error(f"Gagal load cog {extension}: {e}", exc_info=True)
+
+    # Sync slash commands tree ke Discord
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} slash command(s) ke Discord")
+    except Exception as e:
+        logger.error(f"Gagal sync slash commands: {e}", exc_info=True)
 
 
 @bot.event
@@ -82,14 +90,46 @@ async def on_ready():
     logger.info("CyberHeist Bot siap menerima command!")
 
 
-@bot.command(name="ping")
-async def ping(ctx: commands.Context):
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """
-    Command sederhana untuk tes koneksi/latency bot.
-    Contoh pemakaian di Discord: !ping
+    Global error handler untuk semua slash commands.
+    Menangani cooldown, missing permissions, dan error umum lainnya.
     """
-    latency_ms = round(bot.latency * 1000)
-    await ctx.send(f"Pong! Latency: {latency_ms}ms")
+    if isinstance(error, app_commands.CommandOnCooldown):
+        remaining = round(error.retry_after, 1)
+        await interaction.response.send_message(
+            f"⏳ Command ini masih cooldown. Tunggu **{remaining} detik** lagi.",
+            ephemeral=True
+        )
+    elif isinstance(error, app_commands.BotMissingPermissions):
+        await interaction.response.send_message(
+            "❌ Bot tidak punya permission yang cukup untuk menjalankan command ini.",
+            ephemeral=True
+        )
+    elif isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message(
+            "❌ Kamu tidak punya permission untuk menggunakan command ini.",
+            ephemeral=True
+        )
+    else:
+        logger.error(f"Unhandled app command error: {error}", exc_info=error)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "❌ Terjadi error saat menjalankan command. Error sudah dicatat.",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                "❌ Terjadi error saat menjalankan command. Error sudah dicatat.",
+                ephemeral=True
+            )
+
+
+# Hapus prefix command !ping karena sudah diganti dengan slash command di help cog
+# @bot.command(name="ping")
+# async def ping(ctx: commands.Context):
+#     ...
 
 
 @bot.event

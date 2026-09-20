@@ -53,6 +53,7 @@ class AdminCog(commands.Cog):
         "playerinfo": "!playerinfo [@user]",
         "dbstats": "!dbstats",
         "reload": "!reload hack",
+        "sync": "!sync  atau  !sync guild",
         "resetdaily": "!resetdaily [@user]",
         "setstreak": "!setstreak @user 5",
     }
@@ -366,6 +367,27 @@ class AdminCog(commands.Cog):
         embed.add_field(name="Rata-rata Level", value=f"`{stats['avg_level']}`", inline=True)
         embed.add_field(name="Rata-rata Bytes/Player", value=f"`{stats['avg_bytes']:,}`", inline=True)
         await ctx.send(embed=embed)
+
+    # =====================================================
+    # SLASH COMMAND SYNC (ADMIN)
+    # =====================================================
+
+    @commands.command(name="sync")
+    @commands.is_owner()
+    async def sync(self, ctx: commands.Context, scope: str = "global"):
+        """
+        Sync slash commands tree ke Discord (global atau guild-specific).
+        Pemakaian: !sync  atau  !sync guild
+        """
+        if scope == "guild":
+            # Sync ke guild saat ini (instant, untuk testing)
+            self.bot.tree.copy_global_to(guild=ctx.guild)
+            synced = await self.bot.tree.sync(guild=ctx.guild)
+            await ctx.send(f"✅ Synced {len(synced)} slash command(s) ke server ini (guild-specific).")
+        else:
+            # Sync global (bisa butuh waktu ~1 jam untuk propagasi Discord)
+            synced = await self.bot.tree.sync()
+            await ctx.send(f"✅ Synced {len(synced)} slash command(s) secara global. Mungkin butuh waktu ~1 jam untuk muncul di semua server.")
 
     # =====================================================
     # HOT RELOAD (dev convenience)

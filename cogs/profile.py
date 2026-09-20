@@ -2,10 +2,11 @@
 CyberHeist Bot - Profile Cog
 ==============================
 Cog ini menangani command yang berkaitan dengan menampilkan status
-player: !profile, !stats (alias), dan !leaderboard.
+player: /profile dan /leaderboard.
 """
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 import database
@@ -28,14 +29,14 @@ class ProfileCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="profile", aliases=["stats"])
-    async def profile(self, ctx: commands.Context):
+    @app_commands.command(name="profile", description="Lihat status hacker, level, Bytes, XP, Heat, hardware, dan streak")
+    async def profile(self, interaction: discord.Interaction):
         """
         Menampilkan status player: Level, Bytes, XP, Heat, Rig, dan
         status Jail (kalau sedang dalam masa karantina setelah arrested).
-        Pemakaian di Discord: !profile atau !stats
+        Pemakaian di Discord: /profile
         """
-        player = database.get_player(ctx.author.id)
+        player = database.get_player(interaction.user.id)
 
         xp_needed = config.xp_required_for_level(player["level"])
         xp_percent = round((player["xp"] / xp_needed) * 100) if xp_needed > 0 else 0
@@ -43,7 +44,7 @@ class ProfileCog(commands.Cog):
 
         heat = player["heat"]
         if heat >= config.HEAT_DANGER_THRESHOLD:
-            heat_status = "🔴 BAHAYA - Segera !clean!"
+            heat_status = "🔴 BAHAYA - Segera /clean!"
         elif heat >= config.HEAT_DANGER_THRESHOLD // 2:
             heat_status = "🟡 Waspada"
         else:
@@ -61,10 +62,10 @@ class ProfileCog(commands.Cog):
             else:
                 rig_name = config.RIG_TIERS[rig_level - 1]["name"]
 
-        jail_status = database.is_jailed(ctx.author.id)
+        jail_status = database.is_jailed(interaction.user.id)
 
         embed = discord.Embed(
-            title=f"🕵️ Profil Hacker: {ctx.author.display_name}",
+            title=f"🕵️ Profil Hacker: {interaction.user.display_name}",
             color=discord.Color.dark_purple(),
         )
         embed.add_field(name="Level", value=f"`{player['level']}`", inline=True)
@@ -83,9 +84,9 @@ class ProfileCog(commands.Cog):
         )
 
         # Daily reward status
-        daily_status = database.get_daily_status(ctx.author.id)
+        daily_status = database.get_daily_status(interaction.user.id)
         if daily_status["can_claim"]:
-            daily_display = f"🎁 **Tersedia** - Gunakan `!daily`"
+            daily_display = f"🎁 **Tersedia** - Gunakan `/daily`"
         else:
             seconds_remaining = daily_status["seconds_until_reset"]
             hours, remainder = divmod(seconds_remaining, 3600)
@@ -107,28 +108,28 @@ class ProfileCog(commands.Cog):
             embed.add_field(
                 name="🔒 Status Karantina",
                 value=(
-                    f"**DALAM PENGAWASAN** - tidak bisa `!hack`\n"
+                    f"**DALAM PENGAWASAN** - tidak bisa `/hack`\n"
                     f"Sisa waktu: **{time_str}**"
                 ),
                 inline=False,
             )
             embed.color = discord.Color.red()
 
-        embed.set_thumbnail(url=ctx.author.display_avatar.url)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-    @commands.command(name="leaderboard", aliases=["lb", "top"])
-    async def leaderboard(self, ctx: commands.Context):
+    @app_commands.command(name="leaderboard", description="Tampilkan peringkat 10 hacker terkaya di seluruh server")
+    async def leaderboard(self, interaction: discord.Interaction):
         """
         Menampilkan peringkat hacker terkaya (global - karena data
         player bersifat satu wallet untuk semua server Discord).
-        Pemakaian: !leaderboard
+        Pemakaian di Discord: /leaderboard
         """
         leaderboard_data = database.get_leaderboard(limit=10)
 
         if not leaderboard_data:
-            await ctx.send("📭 Belum ada data hacker di database.")
+            await interaction.response.send_message("📭 Belum ada data hacker di database.")
             return
 
         embed = discord.Embed(
@@ -150,8 +151,8 @@ class ProfileCog(commands.Cog):
             leaderboard_list.append(f"{medal} **{name}** — Level `{row['level']}` | `{row['bytes']:,}` Bytes")
 
         embed.description = "\n".join(leaderboard_list)
-        embed.set_footer(text="Kejar peringkat teratas dengan rajin !hack dan !net!")
-        await ctx.send(embed=embed)
+        embed.set_footer(text="Kejar peringkat teratas dengan rajin /hack dan /net!")
+        await interaction.response.send_message(embed=embed)
 
 
 async def setup(bot: commands.Bot):

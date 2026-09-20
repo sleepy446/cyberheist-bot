@@ -12,5 +12,7 @@
 11. Menambahkan Daily Reward System (!daily) dengan reset 00:00 UTC, streak bonus (cap 100 Bytes), dan mystery drop pool
 12. Menambahkan admin command !resetdaily dan !setstreak untuk testing dan moderasi
 13. Integrasi status daily reward ke command !profile dan !playerinfo
+14. Migrasi penuh Player Commands ke Discord Slash Commands (/hack, /profile, /leaderboard, /shop, /buy dengan autocomplete, /net, /clean, /daily, /ping, /help)
+15. Admin Commands tetap menggunakan Prefix ! dengan penambahan command !sync untuk sinkronisasi tree slash commands
 
 
