@@ -77,7 +77,7 @@ RIG_TIERS = [
     {
         "tier": 1,
         "name": "Botnet Kecil",
-        "price": 500,
+        "price": 450,
         "income_per_tick": 5,   # Bytes yang dihasilkan tiap kali !net diklaim
     },
     {
@@ -98,4 +98,7 @@ RIG_TIERS = [
 # =========================================================
 # DATABASE
 # =========================================================
-DATABASE_PATH = "data/cyberheist.sqlite3"
+# Path absolut relatif ke lokasi file ini, bukan CWD
+import os as _os
+_BASE_DIR = _os.path.dirname(_os.path.abspath(__file__))
+DATABASE_PATH = _os.path.join(_BASE_DIR, "data", "cyberheist.sqlite3")

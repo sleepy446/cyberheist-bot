@@ -54,7 +54,12 @@ class ProfileCog(commands.Cog):
         if player["rig_level"] == 0:
             rig_name = "Belum ada hardware"
         else:
-            rig_name = config.RIG_TIERS[player["rig_level"] - 1]["name"]
+            # Bounds check: pastikan rig_level tidak melebihi jumlah tier yang tersedia
+            rig_level = player["rig_level"]
+            if rig_level > len(config.RIG_TIERS):
+                rig_name = f"⚠️ Invalid Rig (Tier {rig_level})"
+            else:
+                rig_name = config.RIG_TIERS[rig_level - 1]["name"]
 
         jail_status = database.is_jailed(ctx.author.id)
 

@@ -13,6 +13,9 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 import database
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # --- Load token dari file .env ---
 # Kita simpan token di .env (bukan hardcode di kode) demi keamanan.
@@ -62,9 +65,9 @@ async def setup_hook():
     for extension in INITIAL_EXTENSIONS:
         try:
             await bot.load_extension(extension)
-            print(f"[COG] Berhasil load: {extension}")
+            logger.info(f"Berhasil load cog: {extension}")
         except Exception as e:
-            print(f"[COG ERROR] Gagal load {extension}: {e}")
+            logger.error(f"Gagal load cog {extension}: {e}", exc_info=True)
 
 
 @bot.event
@@ -73,9 +76,9 @@ async def on_ready():
     Event ini otomatis terpanggil saat bot berhasil login dan siap dipakai.
     Berguna untuk konfirmasi di terminal bahwa koneksi ke Discord berhasil.
     """
-    print(f"[OK] Bot berhasil online sebagai: {bot.user}")
-    print(f"[OK] Terhubung ke {len(bot.guilds)} server.")
-    print("[OK] CyberHeist Bot siap menerima command...")
+    logger.info(f"Bot berhasil online sebagai: {bot.user}")
+    logger.info(f"Terhubung ke {len(bot.guilds)} server")
+    logger.info("CyberHeist Bot siap menerima command!")
 
 
 @bot.command(name="ping")
@@ -88,8 +91,64 @@ async def ping(ctx: commands.Context):
     await ctx.send(f"Pong! Latency: {latency_ms}ms")
 
 
+@bot.event
+async def on_command_error(ctx: commands.Context, error):
+    """
+    Global error handler untuk semua command yang tidak punya
+    error handler sendiri. Mencegah bot diam tanpa respons.
+    """
+    # Jika error sudah di-handle di level cog, skip
+    if hasattr(ctx.command, "on_error"):
+        return
+
+    # Jika cog punya error handler sendiri, skip
+    if ctx.cog and ctx.cog.has_error_handler():
+        return
+
+    # Handle error umum
+    if isinstance(error, commands.CommandNotFound):
+        # Jangan spam channel untuk command yang tidak ada
+        return
+
+    elif isinstance(error, commands.DisabledCommand):
+        await ctx.send(f"❌ Command `!{ctx.command}` sedang dinonaktifkan.")
+
+    elif isinstance(error, commands.NoPrivateMessage):
+        try:
+            await ctx.author.send(f"❌ Command `!{ctx.command}` tidak bisa digunakan di DM.")
+        except discord.Forbidden:
+            pass
+
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ Kamu tidak punya permission untuk menggunakan command ini.")
+
+    elif isinstance(error, commands.BotMissingPermissions):
+        await ctx.send("❌ Bot tidak punya permission yang cukup untuk menjalankan command ini.")
+
+    elif isinstance(error, commands.CommandOnCooldown):
+        # Ini seharusnya sudah di-handle di masing-masing command
+        # Tapi sebagai fallback:
+        remaining = round(error.retry_after, 1)
+        await ctx.send(f"⏳ Command ini masih cooldown. Tunggu **{remaining} detik** lagi.")
+
+    else:
+        # Error yang tidak terduga - log dan beri tahu user
+        logger.error(f"Unhandled error in command {ctx.command}: {error}", exc_info=error)
+        await ctx.send(
+            f"❌ Terjadi error saat menjalankan command `!{ctx.command}`.\n"
+            f"Error sudah dicatat. Jika terus terjadi, hubungi admin bot."
+        )
+
+
 # --- Jalankan Bot ---
 if __name__ == "__main__":
-    # Pastikan database & tabel 'players' sudah siap SEBELUM bot online.
-    database.init_db()
-    bot.run(TOKEN)
+    try:
+        # Pastikan database & tabel 'players' sudah siap SEBELUM bot online.
+        logger.info("Inisialisasi database...")
+        database.init_db()
+        logger.info("Database siap. Menjalankan bot...")
+        bot.run(TOKEN)
+    except KeyboardInterrupt:
+        logger.info("Bot dihentikan oleh user (Ctrl+C)")
+    except Exception as e:
+        logger.critical(f"Bot crash dengan error fatal: {e}", exc_info=True)

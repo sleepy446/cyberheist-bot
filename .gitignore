@@ -13,3 +13,10 @@ data/*.db
 # OS/editor junk
 .DS_Store
 *.swp
+
+# Logs
+logs/
+*.log
+
+# Temp/scratch files
+semua_kode.txt

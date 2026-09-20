@@ -69,7 +69,9 @@ class CleanCog(commands.Cog):
         embed.add_field(name="💸 Biaya Jasa", value=f"-{cleaning_cost:,} Bytes", inline=True)
         embed.add_field(name="🔥 Penurunan Heat", value=f"-{config.HEAT_REDUCTION_PER_CLEAN} poin", inline=True)
         embed.add_field(name="🛡️ Heat Terbaru", value=f"`{new_heat}/100` - {heat_status}", inline=False)
-        embed.set_footer(text="Sistem pendinginan jejak aktif. Cooldown 1 menit sebelum membersihkan lagi.")
+
+        cooldown_minutes = config.CLEAN_COOLDOWN_SECONDS // 60
+        embed.set_footer(text=f"Sistem pendinginan jejak aktif. Cooldown {cooldown_minutes} menit sebelum membersihkan lagi.")
 
         await ctx.send(embed=embed)
 

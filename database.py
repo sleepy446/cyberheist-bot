@@ -17,6 +17,9 @@ import time
 from contextlib import contextmanager
 
 import config
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def init_db():
@@ -56,7 +59,7 @@ def init_db():
         # supaya progress testing tidak hilang), lalu buat ulang tabel
         # tanpa guild_id.
         if "guild_id" in existing_columns:
-            print("[DB] Migration: menghapus skema guild_id, menyatukan data player jadi wallet global...")
+            logger.info("Migration: menghapus skema guild_id, menyatukan data player jadi wallet global...")
             conn.execute("""
                 CREATE TABLE players_new (
                     user_id     INTEGER PRIMARY KEY,
@@ -84,7 +87,7 @@ def init_db():
             conn.execute("DROP TABLE players")
             conn.execute("ALTER TABLE players_new RENAME TO players")
             conn.commit()
-            print("[DB] Migration guild_id selesai. Data player sekarang global per user_id.")
+            logger.info("Migration guild_id selesai. Data player sekarang global per user_id.")
 
         # --- Migration 2: tambah kolom jail_until kalau tabel sangat lama belum punya ---
         existing_columns = [
@@ -95,9 +98,9 @@ def init_db():
                 "ALTER TABLE players ADD COLUMN jail_until INTEGER NOT NULL DEFAULT 0"
             )
             conn.commit()
-            print("[DB] Migration: kolom 'jail_until' berhasil ditambahkan.")
+            logger.info("Migration: kolom 'jail_until' berhasil ditambahkan.")
 
-    print("[DB] Database siap. Tabel 'players' sudah ada/dibuat.")
+    logger.info("Database siap. Tabel 'players' sudah ada/dibuat.")
 
 
 @contextmanager
@@ -151,11 +154,14 @@ def get_player(user_id: int) -> sqlite3.Row:
 # =========================================================
 
 def add_bytes(user_id: int, amount: int):
-    """Menambah (atau mengurangi jika amount negatif) jumlah Bytes player."""
+    """
+    Menambah (atau mengurangi jika amount negatif) jumlah Bytes player.
+    PENTING: Bytes tidak akan pernah menjadi negatif (clamped ke 0).
+    """
     get_player(user_id)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE players SET bytes = bytes + ? WHERE user_id = ?",
+            "UPDATE players SET bytes = MAX(0, bytes + ?) WHERE user_id = ?",
             (amount, user_id),
         )
         conn.commit()
@@ -229,9 +235,14 @@ def set_level(user_id: int, level: int, xp: int = 0):
 def add_heat(user_id: int, amount: int) -> dict:
     """
     Menambah/mengurangi Heat player dengan clamp [0, 100].
-    Jika Heat mencapai 100: reset ke 0, sita denda (HEAT_ARREST_FINE_PERCENTAGE
-    dari total Bytes, minimal HEAT_ARREST_FINE_MINIMUM), dan set jail_until
-    (timestamp) selama JAIL_COOLDOWN_SECONDS ke depan.
+    Jika Heat mencapai 100 (dan amount POSITIF/penambahan): reset ke 0,
+    sita denda (HEAT_ARREST_FINE_PERCENTAGE dari total Bytes, minimal
+    HEAT_ARREST_FINE_MINIMUM), dan set jail_until (timestamp) selama
+    JAIL_COOLDOWN_SECONDS ke depan.
+
+    PENTING: Arrest HANYA terjadi saat penambahan heat (amount > 0) yang
+    menyebabkan heat >= 100. Pengurangan heat (amount < 0) tidak akan
+    trigger arrest walau nilainya sempat >= 100.
     """
     player = get_player(user_id)
     current_heat = player["heat"]
@@ -241,7 +252,8 @@ def add_heat(user_id: int, amount: int) -> dict:
     fine = 0
     jail_until = player["jail_until"]
 
-    if new_heat >= config.HEAT_MAX:
+    # Arrest HANYA jika: (1) heat increase (amount > 0), DAN (2) mencapai/lewati 100
+    if amount > 0 and new_heat >= config.HEAT_MAX:
         arrested = True
         new_heat = 0
 
@@ -259,9 +271,10 @@ def add_heat(user_id: int, amount: int) -> dict:
 
     with get_connection() as conn:
         if arrested:
+            # Gunakan MAX(0, bytes - fine) untuk cegah bytes negatif
             conn.execute(
                 """UPDATE players
-                   SET heat = ?, bytes = bytes - ?, jail_until = ?
+                   SET heat = ?, bytes = MAX(0, bytes - ?), jail_until = ?
                    WHERE user_id = ?""",
                 (new_heat, fine, jail_until, user_id),
             )
