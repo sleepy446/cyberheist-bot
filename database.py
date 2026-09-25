@@ -1,14 +1,9 @@
 """
 CyberHeist Bot - Database Layer
-==================================
-File ini adalah satu-satunya tempat yang berurusan langsung dengan SQLite.
-Semua cogs (hack, shop, profile, dll) akan memanggil fungsi-fungsi di
-file ini, TIDAK PERNAH menulis query SQL mentah di file lain.
-Tujuannya: kalau nanti kita ganti struktur tabel, cukup ubah di sini.
 
-CATATAN DESAIN: Data player bersifat GLOBAL (satu wallet per user_id),
-BUKAN per-server Discord. Artinya seorang player bisa main CyberHeist
-dari server mana saja dan progressnya tetap sama/nyambung.
+Single source of truth untuk SQLite operations. Semua cogs call functions di sini,
+tidak ada raw SQL di tempat lain. Data player bersifat global (satu wallet per user_id,
+lintas server Discord).
 """
 
 import sqlite3
@@ -24,13 +19,8 @@ logger = get_logger(__name__)
 
 def init_db():
     """
-    Membuat folder data/ (kalau belum ada) dan tabel `players`
-    (kalau belum ada). Dipanggil sekali saat bot pertama kali start.
-    Juga menjalankan migration otomatis untuk 2 skenario:
-      1. Tabel lama belum punya kolom jail_until -> ditambahkan.
-      2. Tabel lama masih pakai skema guild_id (composite key) dari
-         eksperimen multi-server yang sudah dibatalkan -> data digabung
-         kembali jadi satu wallet global per user_id, kolom guild_id dibuang.
+    Inisialisasi database dan jalankan migrations otomatis (guild_id removal,
+    jail_until, daily reward columns).
     """
     os.makedirs(os.path.dirname(config.DATABASE_PATH), exist_ok=True)
 
@@ -54,14 +44,9 @@ def init_db():
             row["name"] for row in conn.execute("PRAGMA table_info(players)")
         ]
 
-        # --- Migration 1: buang guild_id (dari eksperimen multi-server) ---
-        # Kalau tabel yang sudah ada masih punya kolom guild_id, artinya ini
-        # peninggalan skema lama. Kita gabungkan data per user_id (ambil
-        # total Bytes gabungan, dan nilai TERBAIK untuk level/xp/heat/rig,
-        # supaya progress testing tidak hilang), lalu buat ulang tabel
-        # tanpa guild_id.
+        # Migration 1: merge multi-server data to single wallet per user_id
         if "guild_id" in existing_columns:
-            logger.info("Migration: menghapus skema guild_id, menyatukan data player jadi wallet global...")
+            logger.info("Migration: removing guild_id schema, merging to global wallet...")
             conn.execute("""
                 CREATE TABLE players_new (
                     user_id     INTEGER PRIMARY KEY,
@@ -89,9 +74,9 @@ def init_db():
             conn.execute("DROP TABLE players")
             conn.execute("ALTER TABLE players_new RENAME TO players")
             conn.commit()
-            logger.info("Migration guild_id selesai. Data player sekarang global per user_id.")
+            logger.info("Migration guild_id complete.")
 
-        # --- Migration 2: tambah kolom jail_until kalau tabel sangat lama belum punya ---
+        # Migration 2: add jail_until column if missing
         existing_columns = [
             row["name"] for row in conn.execute("PRAGMA table_info(players)")
         ]
@@ -100,9 +85,9 @@ def init_db():
                 "ALTER TABLE players ADD COLUMN jail_until INTEGER NOT NULL DEFAULT 0"
             )
             conn.commit()
-            logger.info("Migration: kolom 'jail_until' berhasil ditambahkan.")
+            logger.info("Migration: 'jail_until' column added.")
 
-        # --- Migration 3: tambah kolom daily reward (last_daily_claim, daily_streak) ---
+        # Migration 3: add daily reward columns
         existing_columns = [
             row["name"] for row in conn.execute("PRAGMA table_info(players)")
         ]
@@ -111,28 +96,21 @@ def init_db():
                 "ALTER TABLE players ADD COLUMN last_daily_claim INTEGER NOT NULL DEFAULT 0"
             )
             conn.commit()
-            logger.info("Migration: kolom 'last_daily_claim' berhasil ditambahkan.")
+            logger.info("Migration: 'last_daily_claim' column added.")
 
         if "daily_streak" not in existing_columns:
             conn.execute(
                 "ALTER TABLE players ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0"
             )
             conn.commit()
-            logger.info("Migration: kolom 'daily_streak' berhasil ditambahkan.")
+            logger.info("Migration: 'daily_streak' column added.")
 
-    logger.info("Database siap. Tabel 'players' sudah ada/dibuat.")
+    logger.info("Database ready.")
 
 
 @contextmanager
 def get_connection():
-    """
-    Context manager untuk membuka koneksi SQLite dengan aman.
-    timeout=10 membuat SQLite otomatis menunggu (retry) sampai 10 detik
-    kalau file sedang dipakai proses lain, alih-alih langsung error
-    'database is locked'. WAL mode memungkinkan baca/tulis bersamaan
-    dengan lebih toleran, cocok untuk bot Discord dengan banyak command
-    berjalan nyaris bersamaan dari berbagai user.
-    """
+    """SQLite connection with WAL mode and 10s timeout for concurrent access."""
     conn = sqlite3.connect(config.DATABASE_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -142,23 +120,16 @@ def get_connection():
         conn.close()
 
 
-# =========================================================
-# PLAYER: CREATE & READ
-# =========================================================
+# Player: create & read
 
 def get_player(user_id: int) -> sqlite3.Row:
-    """
-    Mengambil data player berdasarkan user_id (global, lintas server).
-    Kalau player belum terdaftar, otomatis dibuatkan row baru dengan
-    nilai default. Thread-safe dengan INSERT OR IGNORE.
-    """
+    """Fetch player data, auto-create if not exists (thread-safe)."""
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM players WHERE user_id = ?", (user_id,)
         ).fetchone()
 
         if row is None:
-            # INSERT OR IGNORE mencegah error jika thread lain sudah insert duluan
             conn.execute(
                 "INSERT OR IGNORE INTO players (user_id) VALUES (?)", (user_id,)
             )
@@ -170,15 +141,10 @@ def get_player(user_id: int) -> sqlite3.Row:
         return row
 
 
-# =========================================================
-# PLAYER: BYTES (currency)
-# =========================================================
+# Player: bytes (currency)
 
 def add_bytes(user_id: int, amount: int):
-    """
-    Menambah (atau mengurangi jika amount negatif) jumlah Bytes player.
-    PENTING: Bytes tidak akan pernah menjadi negatif (clamped ke 0).
-    """
+    """Add or subtract bytes (clamped to 0)."""
     get_player(user_id)
     with get_connection() as conn:
         conn.execute(
@@ -189,7 +155,7 @@ def add_bytes(user_id: int, amount: int):
 
 
 def set_bytes(user_id: int, amount: int):
-    """Mengatur Bytes player LANGSUNG ke nilai tertentu (bukan menambah)."""
+    """Set bytes to exact value."""
     get_player(user_id)
     amount = max(0, amount)
     with get_connection() as conn:
@@ -200,15 +166,10 @@ def set_bytes(user_id: int, amount: int):
         conn.commit()
 
 
-# =========================================================
-# PLAYER: XP & LEVEL
-# =========================================================
+# Player: XP & level
 
 def add_xp(user_id: int, amount: int) -> dict:
-    """
-    Menambah XP player, otomatis memproses level-up (bisa lebih dari
-    1 level sekaligus). Return dict info untuk pesan Discord.
-    """
+    """Add XP and auto-process level-ups. Returns level-up info dict."""
     player = get_player(user_id)
     current_level = player["level"]
     current_xp = player["xp"] + amount
@@ -237,7 +198,7 @@ def add_xp(user_id: int, amount: int) -> dict:
 
 
 def set_level(user_id: int, level: int, xp: int = 0):
-    """Mengatur Level dan XP player LANGSUNG ke nilai tertentu."""
+    """Set level and XP to exact values."""
     get_player(user_id)
     level = max(1, level)
     xp = max(0, xp)
@@ -249,21 +210,12 @@ def set_level(user_id: int, level: int, xp: int = 0):
         conn.commit()
 
 
-# =========================================================
-# PLAYER: HEAT
-# =========================================================
+# Player: heat
 
 def add_heat(user_id: int, amount: int) -> dict:
     """
-    Menambah/mengurangi Heat player dengan clamp [0, 100].
-    Jika Heat mencapai 100 (dan amount POSITIF/penambahan): reset ke 0,
-    sita denda (HEAT_ARREST_FINE_PERCENTAGE dari total Bytes, minimal
-    HEAT_ARREST_FINE_MINIMUM), dan set jail_until (timestamp) selama
-    JAIL_COOLDOWN_SECONDS ke depan.
-
-    PENTING: Arrest HANYA terjadi saat penambahan heat (amount > 0) yang
-    menyebabkan heat >= 100. Pengurangan heat (amount < 0) tidak akan
-    trigger arrest walau nilainya sempat >= 100.
+    Add/subtract heat (clamped 0-100). Arrest triggers only on positive increase
+    reaching 100: reset heat, fine bytes, set jail_until.
     """
     player = get_player(user_id)
     current_heat = player["heat"]
@@ -273,7 +225,6 @@ def add_heat(user_id: int, amount: int) -> dict:
     fine = 0
     jail_until = player["jail_until"]
 
-    # Arrest HANYA jika: (1) heat increase (amount > 0), DAN (2) mencapai/lewati 100
     if amount > 0 and new_heat >= config.HEAT_MAX:
         arrested = True
         new_heat = 0
@@ -292,7 +243,6 @@ def add_heat(user_id: int, amount: int) -> dict:
 
     with get_connection() as conn:
         if arrested:
-            # Gunakan MAX(0, bytes - fine) untuk cegah bytes negatif
             conn.execute(
                 """UPDATE players
                    SET heat = ?, bytes = MAX(0, bytes - ?), jail_until = ?
@@ -315,7 +265,7 @@ def add_heat(user_id: int, amount: int) -> dict:
 
 
 def clear_jail(user_id: int):
-    """Membatalkan status jail player secara instan (set jail_until = 0)."""
+    """Clear jail status (set jail_until = 0)."""
     get_player(user_id)
     with get_connection() as conn:
         conn.execute(
@@ -326,10 +276,7 @@ def clear_jail(user_id: int):
 
 
 def is_jailed(user_id: int) -> dict:
-    """
-    Mengecek apakah player masih dalam status jail (cooldown setelah
-    arrested). Dipanggil !hack SEBELUM mengizinkan aksi.
-    """
+    """Check if player is still jailed (cooldown after arrest)."""
     player = get_player(user_id)
     jail_until = player["jail_until"]
     now = int(time.time())
@@ -341,7 +288,7 @@ def is_jailed(user_id: int) -> dict:
 
 
 def set_heat(user_id: int, value: int):
-    """Mengatur Heat player LANGSUNG (0-100), TANPA memicu logic jail."""
+    """Set heat directly (0-100) without triggering jail logic."""
     get_player(user_id)
     value = max(config.HEAT_MIN, min(config.HEAT_MAX, value))
     with get_connection() as conn:
@@ -352,12 +299,10 @@ def set_heat(user_id: int, value: int):
         conn.commit()
 
 
-# =========================================================
-# PLAYER: RIG LEVEL
-# =========================================================
+# Player: rig level
 
 def set_rig_level(user_id: int, rig_level: int):
-    """Mengatur rig_level player ke nilai tertentu (dipakai saat beli upgrade)."""
+    """Set rig_level to specific value."""
     get_player(user_id)
     with get_connection() as conn:
         conn.execute(
@@ -368,15 +313,12 @@ def set_rig_level(user_id: int, rig_level: int):
 
 
 def get_players_with_heat() -> list:
-    """Mengambil semua player yang memiliki Heat > 0 untuk proses decay."""
+    """Fetch all players with heat > 0 for passive decay."""
     with get_connection() as conn:
         return conn.execute("SELECT user_id, heat FROM players WHERE heat > 0").fetchall()
 
 def get_leaderboard(limit: int = 10):
-    """
-    Mengambil daftar top player berdasarkan Bytes terbanyak (global,
-    tidak per-server, karena wallet player memang bersifat global).
-    """
+    """Fetch top players by bytes (global leaderboard)."""
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM players ORDER BY bytes DESC LIMIT ?", (limit,)
@@ -384,19 +326,17 @@ def get_leaderboard(limit: int = 10):
         return rows
 
 
-# =========================================================
-# ADMIN / MAINTENANCE
-# =========================================================
+# Admin / maintenance
 
 def reset_player(user_id: int):
-    """Menghapus SELURUH data player (kembali ke kondisi seolah baru main)."""
+    """Delete all player data (reset to new player state)."""
     with get_connection() as conn:
         conn.execute("DELETE FROM players WHERE user_id = ?", (user_id,))
         conn.commit()
 
 
 def get_economy_stats() -> dict:
-    """Ringkasan statistik ekonomi: total player, total Bytes, rata-rata level & Bytes."""
+    """Economy stats: total players, total bytes, averages."""
     with get_connection() as conn:
         row = conn.execute("""
             SELECT
@@ -415,15 +355,10 @@ def get_economy_stats() -> dict:
         }
 
 
-# =========================================================
-# DAILY REWARD SYSTEM
-# =========================================================
+# Daily reward system
 
 def get_daily_status(user_id: int) -> dict:
-    """
-    Mengecek status daily reward player: apakah bisa klaim hari ini,
-    streak saat ini, dan sisa waktu menuju reset UTC berikutnya.
-    """
+    """Check daily reward status: can claim, current streak, seconds until reset."""
     player = get_player(user_id)
     current_day = int(time.time()) // 86400
     last_claim_day = player["last_daily_claim"]
@@ -433,7 +368,6 @@ def get_daily_status(user_id: int) -> dict:
     is_streak_continued = (last_claim_day == current_day - 1)
     next_streak = (current_streak + 1) if is_streak_continued else 1
 
-    # Hitung sisa detik menuju reset UTC (00:00 UTC berikutnya)
     next_reset_timestamp = (current_day + 1) * 86400
     seconds_until_reset = next_reset_timestamp - int(time.time())
 
@@ -455,11 +389,8 @@ def claim_daily_reward(
     bonus_value: int
 ) -> dict:
     """
-    Melakukan klaim daily reward secara atomic. Mengembalikan dict dengan
-    status sukses/gagal dan detail reward yang diberikan.
-
-    bonus_type: "extra_bytes", "xp", "heat", "cipher"
-    bonus_value: nilai bonus sesuai tipe
+    Atomic daily reward claim. Returns dict with success status and reward details.
+    bonus_type: "extra_bytes" | "xp" | "heat" | "cipher"
     """
     get_player(user_id)
     current_day = int(time.time()) // 86400
@@ -471,15 +402,11 @@ def claim_daily_reward(
             return {"success": False, "reason": "already_claimed"}
 
         new_streak = daily_status["next_streak"]
-
-        # Hitung total bytes yang akan ditambahkan
         total_bytes_gain = base_bytes + streak_bonus
 
-        # Tambahkan bonus bytes jika tipe adalah extra_bytes atau cipher
         if bonus_type in ["extra_bytes", "cipher"]:
             total_bytes_gain += bonus_value
 
-        # Atomic update dengan conditional WHERE
         cursor = conn.execute(
             """UPDATE players
                SET last_daily_claim = ?,
@@ -490,13 +417,10 @@ def claim_daily_reward(
         )
 
         if cursor.rowcount == 0:
-            # Race condition: player lain sudah claim duluan
             return {"success": False, "reason": "already_claimed"}
 
         conn.commit()
 
-    # Proses bonus XP atau Heat reduction di luar transaksi atomic bytes
-    # (karena fungsi ini punya transaksi sendiri yang aman)
     level_up_result = None
     new_heat = None
 
@@ -521,7 +445,7 @@ def claim_daily_reward(
 
 
 def admin_reset_daily(user_id: int):
-    """Reset last_daily_claim ke 0 untuk testing (admin only)."""
+    """Reset last_daily_claim to 0 for testing."""
     get_player(user_id)
     with get_connection() as conn:
         conn.execute(
@@ -532,9 +456,9 @@ def admin_reset_daily(user_id: int):
 
 
 def admin_set_streak(user_id: int, streak: int):
-    """Set daily_streak ke nilai tertentu (admin only)."""
+    """Set daily_streak to specific value."""
     get_player(user_id)
-    streak = max(0, min(999999, streak))  # Bounds check
+    streak = max(0, min(999999, streak))
     with get_connection() as conn:
         conn.execute(
             "UPDATE players SET daily_streak = ? WHERE user_id = ?",
